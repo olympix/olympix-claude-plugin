@@ -1,0 +1,5 @@
+# Environment (may contain email)
+.env
+
+# OS files
+.DS_Store

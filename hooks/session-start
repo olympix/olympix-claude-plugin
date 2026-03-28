@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+context="Olympix Claude Plugin active."$'\n'
+
+# Check Olympix CLI
+if command -v olympix &>/dev/null || [ -x "$HOME/.opix/bin/olympix" ]; then
+    context+="  CLI: installed"$'\n'
+else
+    context+="  CLI: MISSING — install from https://docs.olympix.ai/cli"$'\n'
+fi
+
+# Check authentication
+AUTH_STATUS="NOT LOGGED IN"
+if [ -f "$HOME/.opix/config.json" ]; then
+    AUTH_STATUS=$(python3 -c "
+import json, sys, time, base64
+try:
+    config = json.load(open('$HOME/.opix/config.json'))
+    token = config.get('sessionToken') or config.get('userToken')
+    if not token:
+        print('NOT LOGGED IN')
+        sys.exit(0)
+    payload = token.split('.')[1]
+    payload += '=' * (4 - len(payload) % 4)
+    exp = json.loads(base64.b64decode(payload)).get('exp', 0)
+    if exp < time.time():
+        print('EXPIRED')
+    else:
+        print('authenticated')
+except:
+    print('NOT LOGGED IN')
+" 2>/dev/null || echo "NOT LOGGED IN")
+fi
+
+case "$AUTH_STATUS" in
+    authenticated) context+="  Auth: authenticated"$'\n' ;;
+    EXPIRED)       context+="  Auth: EXPIRED — run olympix:auth"$'\n' ;;
+    *)             context+="  Auth: NOT LOGGED IN — run olympix:auth"$'\n' ;;
+esac
+
+# Check Forge
+if command -v forge &>/dev/null; then
+    context+="  Forge: installed"$'\n'
+else
+    context+="  Forge: MISSING — install from https://getfoundry.sh"$'\n'
+fi
+
+context+=$'\n'"  Skills:"$'\n'
+context+="    olympix:full-run — Run all Olympix tools on a Foundry repo"$'\n'
+context+="    olympix:static-analysis — Run vulnerability scanner"$'\n'
+context+="    olympix:mutation-test — Generate mutation tests"$'\n'
+context+="    olympix:fuzz-test — Generate fuzz tests"$'\n'
+context+="    olympix:unit-test — Generate unit tests"$'\n'
+context+="    olympix:bug-pocer — Launch BugPocer security analysis"$'\n'
+context+="    olympix:assemble-report — Collect results into a deliverable report"$'\n'
+context+="    olympix:auth — Check/refresh CLI authentication"
+
+escaped=$(escape_for_json "$context")
+
+cat <<ENDJSON
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "$escaped"
+  }
+}
+ENDJSON

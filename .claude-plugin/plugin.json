@@ -1,0 +1,11 @@
+{
+  "name": "olympix-claude-plugin",
+  "description": "Run Olympix smart contract security tools from Claude Code — static analysis, mutation tests, fuzz tests, unit tests, and BugPocer exploit generation",
+  "version": "1.0.0",
+  "author": {
+    "name": "Olympix",
+    "email": "engineering@olympix.ai"
+  },
+  "license": "MIT",
+  "keywords": ["solidity", "security", "smart-contracts", "audit", "olympix", "foundry"]
+}
