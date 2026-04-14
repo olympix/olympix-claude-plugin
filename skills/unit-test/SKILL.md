@@ -322,6 +322,74 @@ contract OlympixVaultCoreUnitTest is OlympixUnitTest("VaultCore") {
 - **Test that setUp doesn't revert** by running `forge coverage --ir-minimum --allow-failure` after adding setUp functions
 - If a contract is too complex to set up without extensive mocking, add a comment `// TODO: requires mock contracts for full setup` and leave a simpler partial setup
 
+### Step 8.5: Add Example Test Functions (few-shot prompts for the generator)
+
+**Critical finding (Superposition repo, 2026-04-14):** a scaffold with `setUp()` and helpers but **zero test functions** produces **zero generated tests** — even when the setUp is copied verbatim from a production test file that had 42 passing tests. The generator uses existing tests in the file as few-shot examples for what to write. No examples → no output.
+
+**Rule:** add **2–4 concrete example test functions per scaffold**, each demonstrating a distinct test pattern. These seed the generator with templates to clone and extend.
+
+**Required pattern coverage (minimum):**
+- **1 happy-path / state-mutation test** — shows how to call the main function and assert on state
+- **1 revert test with `vm.expectRevert`** — shows the revert-assertion pattern
+- **1 access-control / branch test** (if applicable) — shows `vm.prank(unauthorized)` + expected revert, unlocks branch coverage that setUp alone cannot
+- **Plus any repo-specific flow** — e.g., a signed-order swap for an order-book vault, a proxy-forwarded call for a proxy contract
+
+**Naming convention:** prefix examples with `test_example_` so they are visually distinct from generator output and easy to delete or keep as "seed" tests.
+
+**Empirical evidence (Superposition — same repo, same scaffold, same day, 4 generator runs):**
+
+| Scaffold | Result |
+|----------|--------|
+| Helpers only, 0 example tests | **0 tests generated. 0% coverage. 0% mutation. 131 KB failed-attempts log.** |
+| Helpers + 6 example tests | 12 new tests, +41% branch coverage, 56% mutation score |
+
+The drop from "rich scaffold with examples" to "rich scaffold with zero examples" was the difference between usable output and nothing at all. Examples are not optional.
+
+**Full example (proxy with a whitelisted-sender branch):**
+```solidity
+contract OpixMinimalProxyTest is OlympixUnitTest("MinimalProxy") {
+    MockImplementation public proxy;
+    address public authorized;
+    address public unauthorized;
+
+    function setUp() public {
+        authorized = address(this);
+        unauthorized = address(0xDEAD);
+        MinimalProxy proxyImpl = new MinimalProxy(
+            address(new MockImplementation()),
+            [authorized, authorized, authorized, authorized, authorized, authorized, authorized, authorized]
+        );
+        proxy = MockImplementation(address(proxyImpl));
+    }
+
+    // Example 1: happy-path state mutation
+    function test_example_increment() public {
+        uint256 before = proxy.counter();
+        proxy.incrementCounter();
+        assertEq(proxy.counter(), before + 1);
+    }
+
+    // Example 2: revert propagation
+    function test_example_revertPropagation() public {
+        vm.expectRevert(bytes("Intentional revert"));
+        proxy.revertingFunction();
+    }
+
+    // Example 3: branch — unauthorized caller
+    function test_example_unauthorizedCallerReverts() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(bytes("Unauthorized"));
+        proxy.incrementCounter();
+    }
+}
+```
+
+**Verify before running the generator:**
+```bash
+forge test --match-test 'test_example_'
+```
+All example tests MUST pass. A failing example teaches the generator broken patterns.
+
 ### Step 9: Verify Forge Coverage (Final Check)
 
 Run forge coverage one more time:
@@ -356,6 +424,7 @@ Report the output to the user.
 | 6 | Create 10 test templates | — |
 | 7 | `forge coverage --ir-minimum --allow-failure` | Must compile cleanly |
 | 8 | Add `setUp()` functions | — |
+| 8.5 | Add 2–4 `test_example_*` functions per scaffold | `forge test --match-test 'test_example_'` must pass |
 | 9 | `forge coverage --ir-minimum --allow-failure` | Must compile cleanly |
 | 10 | `olympix generate-unit-tests -ca` | Final output |
 
