@@ -5,7 +5,7 @@ description: >
   a final markdown report. Collects static analysis, mutation tests, unit tests,
   fuzz tests, and BugPocer findings into a structured deliverable.
   Downloads attachments from Gmail if MCP is connected.
-  Use after all Olympix tools have completed.
+  Use after all Olympix tools have completed for an assignment.
   TRIGGER: "assemble report", "final report", "olympix report", "collect results", "deliverable"
 tools: Read, Glob, Grep, Bash, Agent
 ---
@@ -26,19 +26,22 @@ Collect all Olympix tool results into a structured `olympix-results/` directory 
 olympix-results/
 ├── report.md                    # Final combined report (markdown)
 ├── olympix-static.md            # Static analysis results
-├── mutation_testing/
+├── mutation_test/
 │   ├── mutation_results.md      # Mutation test summary
 │   └── *.t.sol                  # Quick-fix test files (from email attachments)
-├── unit_test_gen/
+├── unit_test/
 │   ├── unit_test_results.md     # Unit test summary
 │   └── *.t.sol                  # Generated test files (from email attachments)
-├── fuzz_testing/
+├── fuzz_test/
 │   ├── fuzz_results.md          # Fuzz test summary
 │   └── *.t.sol                  # Fuzz test files (from email attachments)
-└── bugpocer/
-    ├── bugpocer_findings.md     # BugPocer findings (if available)
-    └── pocs/
-        └── *.t.sol              # PoC files (if available)
+└── bugpocer_pocs/
+    ├── full-run/
+    │   ├── BugPoCer_Scan_Report*.pdf # BugPocer PDF report
+    │   └── *.t.sol                   # PoC files for full-repo scan
+    └── scoped-run/                   # Optional: second scan with narrower scope
+        ├── BugPoCer_Scan_Report*.pdf
+        └── *.t.sol
 ```
 
 ## Process
@@ -46,7 +49,7 @@ olympix-results/
 ### Step 1: Create Directory Structure
 
 ```bash
-mkdir -p olympix-results/{mutation_testing,unit_test_gen,fuzz_testing,bugpocer/pocs}
+mkdir -p olympix-results/{mutation_test,unit_test,fuzz_test,bugpocer_pocs/full-run,bugpocer_pocs/scoped-run}
 ```
 
 ### Step 2: Verify Static Analysis
@@ -76,15 +79,15 @@ Use `gmail_read_message` to get the full email body and attachment list. Extract
 > "I've extracted all the metrics from your result emails. Please download the email attachments and save them to:
 >
 > **Unit test email** (session {id}):
-> - `.t.sol` files -> `olympix-results/unit_test_gen/`
-> - `mutation_tests.csv` -> `olympix-results/unit_test_gen/`
+> - `.t.sol` files → `olympix-results/unit_test/`
+> - `mutation_tests.csv` → `olympix-results/unit_test/`
 >
 > **Mutation test email** (session {id}):
-> - `mutation_tests.csv` -> `olympix-results/mutation_testing/`
-> - Any `.t.sol` quick-fix files -> `olympix-results/mutation_testing/`
+> - `mutation_tests.csv` → `olympix-results/mutation_test/`
+> - Any `.t.sol` quick-fix files → `olympix-results/mutation_test/`
 >
 > **Fuzz test email** (session {id}):
-> - `fuzz_tests.zip` -> `olympix-results/fuzz_testing/` (unzip after saving)"
+> - `fuzz_tests.zip` → `olympix-results/fuzz_test/` (unzip after saving)"
 
 ---
 
@@ -95,9 +98,9 @@ Ask the user to provide the results:
 > "I need the results from your Olympix sessions. For each session, please:
 > 1. Forward or paste the result email content so I can extract metrics
 > 2. Download and save the attachments:
->    - Unit test `.t.sol` files + `mutation_tests.csv` -> `olympix-results/unit_test_gen/`
->    - Mutation test `mutation_tests.csv` + `.t.sol` quick-fixes -> `olympix-results/mutation_testing/`
->    - Fuzz test `fuzz_tests.zip` -> `olympix-results/fuzz_testing/` (unzip after saving)"
+>    - Unit test `.t.sol` files + `mutation_tests.csv` → `olympix-results/unit_test/`
+>    - Mutation test `mutation_tests.csv` + `.t.sol` quick-fixes → `olympix-results/mutation_test/`
+>    - Fuzz test `fuzz_tests.zip` → `olympix-results/fuzz_test/` (unzip after saving)"
 
 For any metrics the user provides, parse them and populate the corresponding `*_results.md` files. For any not provided, mark as "Results pending" in the report.
 
@@ -107,9 +110,9 @@ For any metrics the user provides, parse them and populate the corresponding `*_
 
 | Tool | Attachments | Save to |
 |------|------------|---------|
-| Unit Tests | `*.t.sol` (per contract), `mutation_tests.csv` | `olympix-results/unit_test_gen/` |
-| Mutation Tests | `mutation_tests.csv`, `*.t.sol` (quick-fixes) | `olympix-results/mutation_testing/` |
-| Fuzz Tests | `fuzz_tests.zip` | `olympix-results/fuzz_testing/` (unzip) |
+| Unit Tests | `*.t.sol` (per contract), `mutation_tests.csv` | `olympix-results/unit_test/` |
+| Mutation Tests | `mutation_tests.csv`, `*.t.sol` (quick-fixes) | `olympix-results/mutation_test/` |
+| Fuzz Tests | `fuzz_tests.zip` | `olympix-results/fuzz_test/` (unzip) |
 
 **Metrics to extract from email bodies (both paths):**
 
@@ -118,19 +121,19 @@ For any metrics the user provides, parse them and populate the corresponding `*_
 - With Quick Fixes: X%
 - Per-file breakdown (file, score, with-quick-fixes score)
 - Session ID and duration
-- Save summary to `olympix-results/mutation_testing/mutation_results.md`
+- Save summary to `olympix-results/mutation_test/mutation_results.md`
 
 **Unit Tests:**
 - Quick Summary: X new tests generated across Y test contracts
 - Average coverage improvement: X% lines, Y% branches
 - Per-file coverage table (file, before tests/lines/branches, after, improvement)
 - Mutation test results after generated unit tests (if included)
-- Save summary to `olympix-results/unit_test_gen/unit_test_results.md`
+- Save summary to `olympix-results/unit_test/unit_test_results.md`
 
 **Fuzz Tests:**
 - Per-contract table: Contract, Attack Strategy, Paths, Feasible, Infeasible, Relevant Test Cases, Exploit Test Cases
 - Elapsed time
-- Save summary to `olympix-results/fuzz_testing/fuzz_results.md`
+- Save summary to `olympix-results/fuzz_test/fuzz_results.md`
 
 **If Gmail MCP is NOT available:** ask the user to manually provide the result emails or copy files into the directories. Note which sections are incomplete.
 
@@ -144,7 +147,7 @@ ls -la *BugPoCer*.pdf 2>/dev/null
 ls -la test/poc/ 2>/dev/null
 ```
 
-If found, copy PoC files and any BugPocer findings to `olympix-results/bugpocer/`.
+If found, copy PoC files and any BugPocer findings to `olympix-results/bugpocer_pocs/full-run/`.
 
 If the user has run BugPocer and has findings, extract them into `bugpocer_findings.md` with the format:
 
@@ -199,7 +202,7 @@ Create `olympix-results/report.md` following this structure:
 
 ### Mutation Files
 
-[Link to mutation_testing/ directory]
+[Link to mutation_test/ directory]
 
 ---
 
@@ -226,7 +229,7 @@ Create `olympix-results/report.md` following this structure:
 
 ### Unit Testing Files
 
-[Link to unit_test_gen/ directory]
+[Link to unit_test/ directory]
 
 ---
 
@@ -240,7 +243,7 @@ Create `olympix-results/report.md` following this structure:
 
 ### Fuzz Testing Files
 
-[Link to fuzz_testing/ directory]
+[Link to fuzz_test/ directory]
 
 ---
 
@@ -261,7 +264,7 @@ Create `olympix-results/report.md` following this structure:
 
 ### BugPoCer PoCs
 
-[Link to bugpocer/pocs/ directory]
+[Link to bugpocer_pocs/full-run/ directory]
 
 ---
 
