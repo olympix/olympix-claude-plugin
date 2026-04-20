@@ -1,4 +1,4 @@
-# Environment (may contain email)
+# Environment (if any local overrides)
 .env
 
 # OS files

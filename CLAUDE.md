@@ -22,19 +22,19 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - Maximum 10 contracts for mutation/unit tests, 3 for fuzz tests.
 - All output goes to `olympix-results/` in the project root.
 - BugPocer is interactive (TUI). Claude prepares the repo and hands off to the user with `! olympix bug-pocer`.
+- Consistent casing: "BugPocer" (not "BugPoCer").
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.
-- Static analysis runs synchronously. Mutation, fuzz, and unit test generation are async -- results arrive via email.
-- Gmail MCP is optional. If not connected, ask the user to provide verification codes and result metrics manually.
+- Static analysis runs synchronously. Mutation, fuzz, and unit test generation are async — results arrive via email. Ask the user to check email and provide results manually.
 
 ## Output structure
 
 ```
 olympix-results/
   olympix-static.md        — static analysis findings
-  mutation-test-results/   — mutation test metrics and reports
-  fuzz-test-results/       — fuzz test reports
-  unit-test-results/       — unit test coverage and reports
-  bugpocer-findings/       — BugPocer exploit PoCs
+  mutation_test/           — mutation test metrics and reports
+  fuzz_test/              — fuzz test reports
+  unit_test/             — unit test coverage and reports
+  bugpocer_pocs/          — BugPocer exploit PoCs
   report.md                — assembled final report
 ```

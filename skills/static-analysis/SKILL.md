@@ -22,15 +22,11 @@ Run Olympix static analysis on a Foundry-based Solidity repository and save the 
 
 ### Step 0: Verify Olympix Authentication
 
-Follow the `auth` skill to check authentication and automate login via Gmail if needed. If Gmail MCP is not connected, fall back to asking the user to run `! olympix login -e email` manually.
+Run the `auth` skill to check authentication.
 
 ### Step 1: Verify Repository Builds
 
-```bash
-forge build
-```
-
-**If it fails:** initialize the repo per the README. **HARD STOP** if it cannot be fixed.
+Read and follow `skills/_shared/forge-setup.md`.
 
 ### Step 2: Run Static Analysis
 
@@ -91,15 +87,6 @@ Tell the user:
 - That full results are saved in `olympix-results/olympix-static.md`
 - Highlight any Critical or High findings
 
-## Quick Reference
-
-| Step | Command / Action | Gate |
-|------|-----------------|------|
-| 1 | `forge build` | Must compile |
-| 2 | `olympix analyze -f json -o .` | Synchronous — waits for results |
-| 3 | Convert JSON -> `olympix-results/olympix-static.md` | — |
-| 4 | Report summary to user | — |
-
 ## CLI Options
 
 | Flag | Description |
@@ -112,11 +99,3 @@ Tell the user:
 | `-ail` | Enable AI layer to prune findings |
 | `-aic <level>` | AI confidence threshold (high/medium/low) |
 | `--no-<vuln-id>` | Ignore specific vulnerability type |
-
-## Common Issues
-
-| Problem | Solution |
-|---------|----------|
-| `forge build` fails | Install deps per README |
-| No JSON file produced | Fall back to tree output: `olympix analyze 2>&1 \| tee olympix-static-raw.txt` |
-| Too many low-severity findings | Use `-ail` to enable AI pruning, or `-aic medium` to hide low-confidence findings |

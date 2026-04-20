@@ -10,34 +10,34 @@ Olympix is a smart contract security analysis platform that runs static analysis
 
 ## Installation
 
-### Quick start (recommended)
+### Quick start
 
 ```bash
 cd olympix-claude-plugin
 scripts/setup.sh
 ```
 
-The setup wizard checks prerequisites, optionally configures your email, registers the plugin with Claude Code, and adds CLI permissions.
+The setup script checks prerequisites, registers the plugin with Claude Code, and adds CLI permissions.
 
 ### Manual install
 
-1. Clone this repo alongside your Foundry projects
-2. Register the marketplace:
-   ```bash
-   claude plugins marketplace add /path/to/parent-directory
+1. Clone this repo
+2. Add the plugin path to your Claude Code settings:
+   ```json
+   {
+     "plugins": ["/path/to/olympix-claude-plugin"]
+   }
    ```
-3. Install the plugin:
-   ```bash
-   claude plugins install olympix-claude-plugin@olympix --scope local
+3. Add permissions:
+   ```json
+   {
+     "permissions": {
+       "allow": ["Bash(olympix:*)", "Bash(forge:*)"]
+     }
+   }
    ```
 
-### CLI-bundled (coming soon)
-
-```bash
-olympix setup-plugin
-```
-
-## Quick start
+## Usage
 
 Open Claude Code inside a Foundry project directory and run:
 
@@ -68,24 +68,11 @@ This will:
 | `olympix:assemble-report` | Collect results into `olympix-results/report.md` |
 | `olympix:auth` | Check/refresh CLI authentication |
 
-## Optional: Gmail MCP
+## How results work
 
-Connecting Gmail MCP enhances several skills with automation:
-
-- **Login**: Reads verification codes from your inbox automatically
-- **Result monitoring**: Detects when async tools (mutation/fuzz/unit tests) complete
-- **Report assembly**: Pulls result attachments directly from email
-
-### How to connect
-
-Run `/mcp` in Claude Code and connect `claude.ai Gmail`.
-
-### Without Gmail MCP
-
-All features fall back to manual workflows:
-- You enter verification codes yourself during login
-- You check your email for results and provide metrics to Claude
-- You copy result files manually for report assembly
+- **Static analysis** runs synchronously — results are immediate.
+- **Mutation tests, fuzz tests, and unit tests** are async — results arrive via email. Check your inbox for session results and use `/olympix:assemble-report` to compile the final report.
+- **BugPocer** is interactive — run `! olympix bug-pocer` for the TUI session.
 
 ## Troubleshooting
 
@@ -95,4 +82,4 @@ All features fall back to manual workflows:
 | Auth expired | Run `olympix:auth` or `! olympix login -e your@email.com` |
 | `forge build` fails | Install dependencies per project README |
 | Stack-too-deep | Some contracts incompatible with unit test coverage mode |
-| No email results | Check spam; async tools (mutation/fuzz/unit) send results via email |
+| No email results | Check spam; async tools send results via email |
