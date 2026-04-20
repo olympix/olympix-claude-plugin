@@ -13,21 +13,41 @@ Olympix is a smart contract security analysis platform that runs static analysis
 ### Quick start
 
 ```bash
+git clone https://github.com/olympix/olympix-claude-plugin.git
 cd olympix-claude-plugin
 scripts/setup.sh
 ```
 
-The setup script checks prerequisites, registers the plugin with Claude Code, and adds CLI permissions.
+The setup script checks prerequisites, creates a marketplace wrapper, registers the plugin with Claude Code, and adds CLI permissions. Restart Claude Code after running it.
 
 ### Manual install
 
 1. Clone this repo
 2. Create a marketplace wrapper (sibling directory):
    ```bash
-   mkdir -p /path/to/olympix-plugin-marketplace/.claude-plugin
-   ln -s /path/to/olympix-claude-plugin /path/to/olympix-plugin-marketplace/olympix-claude-plugin
+   PLUGIN_DIR="$(pwd)/olympix-claude-plugin"
+   MARKETPLACE_DIR="$(pwd)/olympix-plugin-marketplace"
+
+   mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
+   ln -s "$PLUGIN_DIR" "$MARKETPLACE_DIR/olympix-claude-plugin"
+
+   cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << 'EOF'
+   {
+     "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+     "name": "olympix",
+     "description": "Olympix smart contract security tools for Claude Code",
+     "owner": { "name": "Olympix", "email": "engineering@olympix.ai" },
+     "plugins": [
+       {
+         "name": "olympix-claude-plugin",
+         "description": "Run Olympix security tools from Claude Code",
+         "source": "./olympix-claude-plugin",
+         "category": "development"
+       }
+     ]
+   }
+   EOF
    ```
-   Add a `marketplace.json` in the `.claude-plugin/` directory (see `scripts/setup.sh` for the full content).
 
 3. Add to your Claude Code settings (`~/.claude/settings.json`):
    ```json
@@ -35,7 +55,7 @@ The setup script checks prerequisites, registers the plugin with Claude Code, an
      "enabledPlugins": { "olympix-claude-plugin@olympix": true },
      "extraKnownMarketplaces": {
        "olympix": {
-         "source": { "source": "directory", "path": "/path/to/olympix-plugin-marketplace" }
+         "source": { "source": "directory", "path": "/absolute/path/to/olympix-plugin-marketplace" }
        }
      },
      "permissions": {
@@ -43,6 +63,8 @@ The setup script checks prerequisites, registers the plugin with Claude Code, an
      }
    }
    ```
+
+4. Restart Claude Code.
 
 ## Usage
 
