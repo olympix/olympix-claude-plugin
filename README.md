@@ -22,15 +22,22 @@ The setup script checks prerequisites, registers the plugin with Claude Code, an
 ### Manual install
 
 1. Clone this repo
-2. Add the plugin path to your Claude Code settings:
-   ```json
-   {
-     "plugins": ["/path/to/olympix-claude-plugin"]
-   }
+2. Create a marketplace wrapper (sibling directory):
+   ```bash
+   mkdir -p /path/to/olympix-plugin-marketplace/.claude-plugin
+   ln -s /path/to/olympix-claude-plugin /path/to/olympix-plugin-marketplace/olympix-claude-plugin
    ```
-3. Add permissions:
+   Add a `marketplace.json` in the `.claude-plugin/` directory (see `scripts/setup.sh` for the full content).
+
+3. Add to your Claude Code settings (`~/.claude/settings.json`):
    ```json
    {
+     "enabledPlugins": { "olympix-claude-plugin@olympix": true },
+     "extraKnownMarketplaces": {
+       "olympix": {
+         "source": { "source": "directory", "path": "/path/to/olympix-plugin-marketplace" }
+       }
+     },
      "permissions": {
        "allow": ["Bash(olympix:*)", "Bash(forge:*)"]
      }

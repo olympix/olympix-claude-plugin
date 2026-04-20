@@ -46,6 +46,13 @@ echo ""
 echo -e "${GREEN}Step 2: Plugin Registration${NC}"
 echo ""
 
+# Check that claude CLI is available
+if ! command -v claude &>/dev/null; then
+    echo -e "  ${RED}ERROR${NC} — 'claude' CLI not found in PATH."
+    echo "  Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code/overview"
+    exit 1
+fi
+
 # Determine install scope
 echo "  Where should the plugin be registered?"
 echo ""
@@ -61,13 +68,6 @@ esac
 echo -e "  ${GREEN}OK${NC} — $INSTALL_MODE install"
 echo ""
 
-# Check that claude CLI is available
-if ! command -v claude &>/dev/null; then
-    echo -e "  ${RED}ERROR${NC} — 'claude' CLI not found in PATH."
-    echo "  Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code/overview"
-    exit 1
-fi
-
 # Determine settings file
 if [ "$INSTALL_MODE" = "global" ]; then
     SETTINGS_FILE="$HOME/.claude/settings.json"
@@ -75,13 +75,29 @@ else
     SETTINGS_FILE="$(pwd)/.claude/settings.local.json"
 fi
 
-# Register the plugin directory
-echo "  Registering plugin..."
-if [ "$INSTALL_MODE" = "global" ]; then
-    SCOPE_FLAG="--scope user"
-else
-    SCOPE_FLAG="--scope project"
-fi
+# Create a marketplace wrapper around the plugin directory
+MARKETPLACE_DIR="${PLUGIN_DIR%/*}/olympix-plugin-marketplace"
+mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
+ln -sfn "$PLUGIN_DIR" "$MARKETPLACE_DIR/olympix-claude-plugin"
+
+cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << MKJSON
+{
+  "\$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "olympix",
+  "description": "Olympix smart contract security tools for Claude Code",
+  "owner": { "name": "Olympix", "email": "engineering@olympix.ai" },
+  "plugins": [
+    {
+      "name": "olympix-claude-plugin",
+      "description": "Run Olympix security tools from Claude Code",
+      "source": "./olympix-claude-plugin",
+      "category": "development"
+    }
+  ]
+}
+MKJSON
+
+echo "  Registering marketplace..."
 
 # Add plugin path to settings
 mkdir -p "$(dirname "$SETTINGS_FILE")"
@@ -90,19 +106,20 @@ if [ ! -f "$SETTINGS_FILE" ]; then
 fi
 
 if command -v jq &>/dev/null; then
-    # Add plugin to projects array
     tmp_file=$(mktemp)
-    jq --arg path "$PLUGIN_DIR" '
-      .plugins //= [] |
-      if (.plugins | map(select(. == $path)) | length) == 0
-      then .plugins += [$path]
-      else .
-      end
+    jq --arg mp_path "$MARKETPLACE_DIR" '
+      .enabledPlugins["olympix-claude-plugin@olympix"] = true |
+      .extraKnownMarketplaces.olympix = {
+        "source": { "source": "directory", "path": $mp_path }
+      }
     ' "$SETTINGS_FILE" > "$tmp_file" && mv "$tmp_file" "$SETTINGS_FILE"
     echo -e "  ${GREEN}OK${NC} — plugin registered in $(basename "$SETTINGS_FILE")"
 else
     echo -e "  ${YELLOW}WARN${NC} — jq not installed, cannot update settings automatically"
-    echo "  Manually add \"$PLUGIN_DIR\" to the plugins array in $SETTINGS_FILE"
+    echo "  Add the following to $SETTINGS_FILE:"
+    echo ""
+    echo "    \"enabledPlugins\": { \"olympix-claude-plugin@olympix\": true },"
+    echo "    \"extraKnownMarketplaces\": { \"olympix\": { \"source\": { \"source\": \"directory\", \"path\": \"$MARKETPLACE_DIR\" } } }"
 fi
 
 echo ""
