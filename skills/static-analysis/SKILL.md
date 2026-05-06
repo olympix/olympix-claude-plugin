@@ -1,9 +1,9 @@
 ---
 name: static-analysis
 description: >
-  Runs Olympix static analysis on a Foundry-based Solidity repo and saves
-  the results to olympix-results/olympix-static.md. Verifies the repo builds first.
-  Returns findings synchronously (not async like other Olympix tools).
+  Runs Olympix static analysis on a Foundry-based Solidity repo using agent mode
+  and saves the results to olympix-results/olympix-static.md. Verifies the repo builds first.
+  Returns findings synchronously via JSONL.
   TRIGGER: "static analysis", "analyze", "run analyzer", "vulnerability scan", "olympix analyze"
 tools: Read, Glob, Grep, Bash
 ---
@@ -32,19 +32,31 @@ Read and follow `skills/_shared/forge-setup.md`.
 
 ```bash
 mkdir -p olympix-results
-olympix analyze -f json -o .
+olympix analyze -w . --agent
 ```
 
-This runs the analyzer and outputs a JSON results file to the current directory.
+This runs the analyzer in agent mode. Output is a single JSONL line:
 
-**Options:**
-- `-f json` — JSON output format (parseable)
-- `-o .` — output to current directory
-- `-ail` / `--ai-layer` — enable AI pruning of findings (optional, add if user requests)
+```json
+{"event":"findings_ready","data":{"findings":[{"id":"...","title":"...","description":"...","file_path":"...","line_number":0}]}}
+```
+
+Each finding has: `id`, `title`, `description`, `file_path`, `line_number`.
+
+**If the workspace has no Solidity files**, the CLI emits:
+```json
+{"event":"error","data":{"message":"No Solidity files found in workspace"}}
+```
+Exit code 1. Report this to the user.
+
+**Using -p for specific paths:**
+```bash
+olympix analyze -w . -p src/core --agent
+```
 
 ### Step 3: Save Results to olympix-results/olympix-static.md
 
-Read the JSON output file and convert it to a readable markdown summary at `olympix-results/olympix-static.md`:
+Parse the JSONL output and convert findings to a readable markdown summary at `olympix-results/olympix-static.md`:
 
 ```markdown
 # Olympix Static Analysis Results
@@ -68,17 +80,16 @@ Read the JSON output file and convert it to a readable markdown summary at `olym
 - **File:** {file path}:{line}
 - **Detector:** {detector id}
 - **Description:** {description}
-- **Recommendation:** {recommendation}
 
 ---
 (repeat for each finding, grouped by severity)
 ```
 
-If the JSON output is not available or the format is unexpected, fall back to running:
+**Fallback:** If agent mode output is not parseable, run without `--agent`:
 ```bash
-olympix analyze 2>&1 | tee olympix-static-raw.txt
+olympix analyze -f json -o .
 ```
-and save the raw tree output, then convert it to markdown manually.
+and parse the JSON file.
 
 ### Step 4: Report to User
 
@@ -91,11 +102,12 @@ Tell the user:
 
 | Flag | Description |
 |------|-------------|
-| `-f json` | JSON output format |
-| `-f sarif` | SARIF output format |
-| `-f tree` | Tree output (default, terminal) |
-| `-o <path>` | Output directory (for json/sarif) |
+| `--agent` | Agent mode — JSONL output (required for this skill) |
+| `-w <path>` | Workspace directory (defaults to cwd) |
 | `-p <path>` | Specific directory to analyze (can repeat) |
+| `-f json` | JSON output format (non-agent fallback) |
+| `-f sarif` | SARIF output format (non-agent fallback) |
+| `-o <path>` | Output directory (for json/sarif, non-agent) |
 | `-ail` | Enable AI layer to prune findings |
 | `-aic <level>` | AI confidence threshold (high/medium/low) |
 | `--no-<vuln-id>` | Ignore specific vulnerability type |

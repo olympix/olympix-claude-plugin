@@ -3,7 +3,7 @@ name: fuzz-test
 description: >
   Prepares a Foundry-based Solidity repo for Olympix fuzz test generation.
   Verifies the repo builds, identifies the top 3 most critical contracts,
-  then runs olympix generate-fuzz-tests with their paths.
+  then runs olympix generate-fuzz-tests. Agent mode is NOT supported for fuzz tests.
   TRIGGER: "fuzz tests", "fuzz test", "generate fuzz tests", "fuzzing", "fuzz-test"
 tools: Read, Glob, Grep, Bash, Agent
 ---
@@ -11,6 +11,8 @@ tools: Read, Glob, Grep, Bash, Agent
 # Fuzz Test Generation
 
 Prepare a Foundry-based Solidity repository for Olympix fuzz test generation by verifying the repo builds, selecting the top 3 most critical contracts, and running the generator.
+
+**Important:** Agent mode (`--agent`) is NOT supported for fuzz test generation. This tool runs in TUI/standard mode only. Results arrive via email.
 
 ## Prerequisites
 
@@ -39,12 +41,15 @@ List the selected contracts with their file paths relative to the repo root befo
 Build the command using `-p` flags for each contract path:
 
 ```bash
-olympix generate-fuzz-tests -p contracts/path/to/Contract1.sol -p contracts/path/to/Contract2.sol -p contracts/path/to/Contract3.sol
+olympix generate-fuzz-tests -w . -p src/Contract1.sol -p src/Contract2.sol -p src/Contract3.sol
 ```
 
 **Rules:**
 - Use the **file path** (not the contract name) for each `-p` argument
 - Paths should be relative to the repo root
 - Maximum 3 contracts per run
+- Do NOT use `--agent` — it will error with "Agent mode is not supported for generate-fuzz-tests yet."
 
 Report the session ID and output to the user. Results arrive via email — ask the user to check their inbox.
+
+**Note:** Unlike mutation tests and unit tests, fuzz test results cannot be retrieved via agent mode. The user must check their email for results.

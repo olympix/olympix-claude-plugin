@@ -4,14 +4,14 @@ description: >
   Scaffolds Olympix unit test templates for a Foundry-based Solidity repo.
   Verifies forge coverage compatibility, creates OlympixUnitTest base contract and
   test files for the top 10 most critical contracts, adds setup functions, then
-  runs olympix generate-unit-tests.
+  runs olympix generate-unit-tests via agent mode. Waits for results and retrieves coverage data.
   TRIGGER: "scaffold tests", "unit test", "generate unit tests", "opix tests", "test generation setup", "unit-test"
 tools: Read, Glob, Grep, Bash, Agent
 ---
 
 # Unit Test Generation
 
-Prepare a Foundry-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator.
+Prepare a Foundry-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator via agent mode.
 
 ## Prerequisites
 
@@ -239,10 +239,85 @@ forge coverage --ir-minimum --allow-failure
 
 If it fails after adding setUp functions, simplify the setUp that caused the failure.
 
-### Step 10: Run Olympix Unit Test Generator
+### Step 10: List Available Contracts (Optional Verification)
+
+Before dispatching, verify the CLI sees the contracts:
 
 ```bash
-olympix generate-unit-tests -ca
+olympix generate-unit-tests -w . --list --agent
 ```
 
-Report the output to the user. Results arrive via email — ask the user to check their inbox.
+Output: `{"event":"list_contracts","data":{"contracts":[{"index":1,"name":"...","path":"..."}]}}`
+
+Verify the contracts you scaffolded appear in the list. The file is also saved to `.opix/agent/unit-tests/contracts.json`.
+
+### Step 11: Dispatch Unit Test Generation
+
+```bash
+printf '{"action":"new_session"}\n{"action":"confirm_all"}\n{"action":"disconnect"}\n' \
+  | olympix generate-unit-tests -w . -p src/Contract1.sol -ca --agent
+```
+
+**Expected JSONL output:**
+```
+{"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","disconnect"]}
+{"event":"results_ready","data":{"type":"unit_test","session_id":"<uuid>","message":"unit test generation started. Check email for results."},"actions":["disconnect"]}
+```
+
+Record the **session_id**.
+
+**Rules:**
+- `-p` specifies which contract file(s) to generate tests for (relative to workspace)
+- `-ca` confirms all contracts without interactive selection
+- Maximum 10 contracts per run
+
+### Step 12: Wait for Completion
+
+Poll the session status periodically (every ~90 seconds) until `Completed` or `Failed`:
+
+```bash
+olympix sessions --agent
+```
+
+Look for the session ID in the `unit_tests` array.
+
+### Step 13: Retrieve Results
+
+When status is `Completed`, reconnect:
+
+```bash
+printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"disconnect"}\n' \
+  | olympix unit-testing --agent
+```
+
+**Expected output:**
+```
+{"event":"unit_test_results","data":{"session_id":"<id>","total_files":1,"successful_files":1,"branches_coverage":74.4,"test_files":[{"subject_contract":"...","subject_path":"...","test_contract":"...","test_path":"...","has_new_tests":true,"coverage_before":71.8,"coverage_after":74.4,"passed":13,"failed":0}]}}
+```
+
+Results also auto-persist to `.opix/agent/unit-tests/results.json`.
+
+**If status is `Failed`:** The session includes an `error_message` field.
+
+### Step 14: Save Results and Report
+
+Parse results and save to `olympix-results/unit_test/unit_test_results.md`:
+
+```markdown
+# Unit Test Results
+
+**Session ID:** {id}
+**Total Files:** {total_files} | **Successful:** {successful_files}
+**Branches Coverage:** {branches_coverage}%
+
+## Per-File Results
+
+| Contract | Test File | Coverage Before | Coverage After | Passed | Failed |
+|----------|-----------|----------------|----------------|--------|--------|
+| ... | ... | ...% | ...% | ... | ... |
+```
+
+Tell the user:
+- Coverage improvements per contract
+- Total tests generated and pass rate
+- Results saved in `olympix-results/unit_test/unit_test_results.md`

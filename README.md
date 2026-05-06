@@ -1,6 +1,6 @@
 # Olympix Claude Plugin
 
-Olympix is a smart contract security analysis platform that runs static analysis with 100+ vulnerability detectors, generates mutation tests, fuzz tests, and unit tests, and produces proof-of-concept exploits via BugPocer. This plugin lets you run all Olympix tools directly from Claude Code.
+Olympix is a smart contract security analysis platform that runs static analysis with 100+ vulnerability detectors, generates mutation tests, fuzz tests, and unit tests, and produces proof-of-concept exploits via BugPocer. This plugin lets you run all Olympix tools directly from Claude Code using agent mode for fully automated JSONL interaction.
 
 ## Prerequisites
 
@@ -79,10 +79,11 @@ This will:
 2. Run `forge build` to verify the project compiles
 3. Run static analysis and save findings
 4. Generate mutation tests for the top 10 most critical contracts
-5. Generate fuzz tests for the top 3 most critical contracts
-6. Generate unit tests with coverage scaffolding
-7. Prompt for BugPocer interactive session
-8. Assemble all results into `olympix-results/report.md`
+5. Generate unit tests with coverage scaffolding
+6. Run BugPocer security analysis (fully automated)
+7. Optionally generate fuzz tests for the top 3 most critical contracts
+8. Wait for async results and download them directly
+9. Assemble all results into `olympix-results/report.md`
 
 ## Available skills
 
@@ -93,15 +94,18 @@ This will:
 | `olympix:mutation-test` | Generate mutation tests for top 10 contracts |
 | `olympix:fuzz-test` | Generate fuzz tests for top 3 contracts |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
-| `olympix:bug-pocer` | Launch BugPocer interactive security analysis |
+| `olympix:bug-pocer` | Run BugPocer security analysis (fully automated) |
 | `olympix:assemble-report` | Collect results into `olympix-results/report.md` |
 | `olympix:auth` | Check/refresh CLI authentication |
 
 ## How results work
 
 - **Static analysis** runs synchronously — results are immediate.
-- **Mutation tests, fuzz tests, and unit tests** are async — results arrive via email. Check your inbox for session results and use `/olympix:assemble-report` to compile the final report.
-- **BugPocer** is interactive — run `! olympix bug-pocer` for the TUI session.
+- **Mutation tests and unit tests** dispatch async jobs. Results are downloaded directly via agent mode when complete — no need to check email.
+- **BugPocer** runs fully automated via agent mode — scope review, validation, questions, scan, and findings retrieval all happen programmatically.
+- **Fuzz tests** are the only tool that does NOT support agent mode. Results arrive via email.
+
+All results auto-persist to `.opix/agent/` inside the workspace directory.
 
 ## Troubleshooting
 
@@ -111,4 +115,4 @@ This will:
 | Auth expired | Run `olympix:auth` or `! olympix login -e your@email.com` |
 | `forge build` fails | Install dependencies per project README |
 | Stack-too-deep | Some contracts incompatible with unit test coverage mode |
-| No email results | Check spam; async tools send results via email |
+| Fuzz `--agent` error | Agent mode not supported for fuzz tests — run without `--agent` |

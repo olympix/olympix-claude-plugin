@@ -4,7 +4,7 @@ description: >
   Assembles all Olympix tool results into an olympix-results directory with
   a final markdown report. Collects static analysis, mutation tests, unit tests,
   fuzz tests, and BugPocer findings into a structured deliverable.
-  Use after all Olympix tools have completed for an assignment.
+  Results can be downloaded directly via agent mode or provided manually.
   TRIGGER: "assemble report", "final report", "olympix report", "collect results", "deliverable"
 tools: Read, Glob, Grep, Bash, Agent
 ---
@@ -15,8 +15,7 @@ Collect all Olympix tool results into a structured `olympix-results/` directory 
 
 ## Prerequisites
 
-- Static analysis has been run (synchronous — should already be in `olympix-results/olympix-static.md`)
-- Async tools (mutation, fuzz, unit tests) have completed and user has the result emails
+- Static analysis has been run (should already be in `olympix-results/olympix-static.md`)
 - Working directory is the root of the Foundry project
 
 ## Output Structure
@@ -35,12 +34,7 @@ olympix-results/
 │   ├── fuzz_results.md          # Fuzz test summary
 │   └── *.t.sol                  # Fuzz test files
 └── bugpocer_pocs/
-    ├── full-run/
-    │   ├── BugPocer_Scan_Report*.pdf
-    │   └── *.t.sol
-    └── scoped-run/
-        ├── BugPocer_Scan_Report*.pdf
-        └── *.t.sol
+    └── findings.md              # BugPocer findings
 ```
 
 ## Process
@@ -48,59 +42,82 @@ olympix-results/
 ### Step 1: Create Directory Structure
 
 ```bash
-mkdir -p olympix-results/{mutation_test,unit_test,fuzz_test,bugpocer_pocs/full-run,bugpocer_pocs/scoped-run}
+mkdir -p olympix-results/{mutation_test,unit_test,fuzz_test,bugpocer_pocs}
 ```
 
 ### Step 2: Verify Static Analysis
 
-Check if `olympix-results/olympix-static.md` exists. If not, check for the JSON output file (`code_analysis_*.json`) and generate it, or run the `static-analysis` skill.
+Check if `olympix-results/olympix-static.md` exists. If not, run the `static-analysis` skill.
 
-### Step 3: Collect Async Results
+### Step 3: Collect Results — Download via Agent Mode
 
-Ask the user to provide results from their Olympix sessions:
+Results from mutation tests, unit tests, and BugPocer can be **downloaded directly** via agent mode. No need to wait for emails.
 
-> I need the results from your Olympix sessions. For each session, please:
-> 1. Forward or paste the result email content so I can extract metrics
-> 2. Download and save the attachments:
->    - Unit test `.t.sol` files + `mutation_tests.csv` → `olympix-results/unit_test/`
->    - Mutation test `mutation_tests.csv` + `.t.sol` quick-fixes → `olympix-results/mutation_test/`
->    - Fuzz test `fuzz_tests.zip` → `olympix-results/fuzz_test/` (unzip after saving)
-
-For any metrics the user provides, parse them and populate the corresponding `*_results.md` files. For any not provided, mark as "Results pending" in the report.
-
-**Metrics to extract from email bodies:**
-
-**Mutation Tests:**
-- Overall Score: X% (Y killed / Z total mutants)
-- With Quick Fixes: X%
-- Per-file breakdown (file, score, with-quick-fixes score)
-- Session ID and duration
-- Save to `olympix-results/mutation_test/mutation_results.md`
-
-**Unit Tests:**
-- Quick Summary: X new tests generated across Y test contracts
-- Average coverage improvement: X% lines, Y% branches
-- Per-file coverage table
-- Save to `olympix-results/unit_test/unit_test_results.md`
-
-**Fuzz Tests:**
-- Per-contract table: Contract, Attack Strategy, Paths, Feasible, Infeasible, Relevant Test Cases, Exploit Test Cases
-- Elapsed time
-- Save to `olympix-results/fuzz_test/fuzz_results.md`
-
-### Step 4: Collect BugPocer Results (if available)
-
-Check if BugPocer output exists:
+#### 3a. Check Available Sessions
 
 ```bash
-ls -la bugpocer_pocs/ 2>/dev/null
-ls -la *BugPocer*.pdf 2>/dev/null
-ls -la test/poc/ 2>/dev/null
+olympix sessions --agent
 ```
 
-If found, copy PoC files and findings to `olympix-results/bugpocer_pocs/full-run/`.
+This returns all sessions across services:
+```json
+{"event":"all_sessions","data":{"bug_pocer":[...],"unit_tests":[...],"mutation_tests":[...]}}
+```
 
-If not run, note it in the report as "Not run — requires interactive session."
+Identify `Completed` sessions to download results from.
+
+#### 3b. Download Mutation Test Results
+
+```bash
+printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"disconnect"}\n' \
+  | olympix mutation-testing --agent
+```
+
+Returns `mutation_test_results` event with: `total_mutations`, `killed`, `survived`, `score_percentage`, and per-mutation details.
+
+Also available at `.opix/agent/mutation-tests/results.json`.
+
+Parse and save to `olympix-results/mutation_test/mutation_results.md`.
+
+#### 3c. Download Unit Test Results
+
+```bash
+printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"disconnect"}\n' \
+  | olympix unit-testing --agent
+```
+
+Returns `unit_test_results` event with: `total_files`, `successful_files`, `branches_coverage`, and per-file coverage data.
+
+Also available at `.opix/agent/unit-tests/results.json`.
+
+Parse and save to `olympix-results/unit_test/unit_test_results.md`.
+
+#### 3d. Download BugPocer Findings
+
+```bash
+printf '{"action":"disconnect"}\n' \
+  | olympix connect-bp-session -s <session-id> -w . --agent
+```
+
+Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`.
+
+Also available at `.opix/agent/<session-id>/findings.json`.
+
+Parse and save to `olympix-results/bugpocer_pocs/findings.md`.
+
+#### 3e. Fuzz Test Results (Manual Only)
+
+Fuzz tests do NOT support agent mode. If fuzz tests were run, ask the user to provide results from their email:
+
+> Fuzz test results can't be downloaded automatically. Please paste or forward the result email so I can extract metrics, or save attachments to `olympix-results/fuzz_test/`.
+
+### Step 4: Handle Missing Results
+
+For any tool that wasn't run or has no completed sessions:
+
+- **No sessions found:** Mark as "Not run" in the report
+- **Sessions still InProgress:** Poll `olympix sessions --agent` and wait, or mark as "In progress" and offer to check later
+- **Failed sessions:** Include the error message in the report
 
 ### Step 5: Generate Final Report
 
@@ -119,8 +136,6 @@ Create `olympix-results/report.md`:
   - [Fuzz Testing Files](#fuzz-testing-files)
 - BugPocer Scan Report
   - [Severity] finding_name (for each finding)
-  - [BugPocer PDF](#bugpocer-pdf)
-  - [BugPocer PoCs](#bugpocer-pocs)
 - Static Analysis
 
 ---
@@ -130,14 +145,12 @@ Create `olympix-results/report.md`:
 ### Mutation Test Results
 
 **Overall Score:** X% (Y killed / Z total mutants)
-**With Quick Fixes:** X%
 
-| File | Score | With Quick Fixes |
-|------|-------|-----------------|
-| Contract1.sol | X% | Y% |
+| File | Line | Original | Mutated | Killed | Broken Tests |
+|------|------|----------|---------|--------|-------------|
+| ... | ... | ... | ... | Yes/No | test1(), test2() |
 
 **Session ID:** {id}
-**Duration:** Xm Ys
 
 ### Mutation Files
 
@@ -149,14 +162,12 @@ Create `olympix-results/report.md`:
 
 ### Unit Test Results
 
-**Quick Summary:** X new tests generated across Y test contracts
-**Average coverage improvement:** X% lines, Y% branches
+**Total Files:** X | **Successful:** Y
+**Branches Coverage:** Z%
 
-#### Coverage Improvements
-
-| File | Before | After | Improvement |
-|------|--------|-------|-------------|
-| Contract1.t.sol | 0 tests, 0% lines, 0% branches | N tests, X% lines, Y% branches | +N, +X%, +Y% |
+| Contract | Test File | Coverage Before | Coverage After | Passed | Failed |
+|----------|-----------|----------------|----------------|--------|--------|
+| ... | ... | ...% | ...% | ... | ... |
 
 ### Unit Testing Files
 
@@ -166,11 +177,9 @@ Create `olympix-results/report.md`:
 
 ## Fuzz Testing
 
-| Contract | Attack Strategy | Paths | Feasible | Infeasible | Relevant Test Cases | Exploit Test Cases |
-|----------|----------------|-------|----------|------------|--------------------|--------------------|
-| Contract1.sol | Strategy | N | N | N | N | N |
-
-**Elapsed Time:** X hours Y minutes Z seconds
+| Contract | Attack Strategy | Paths | Feasible | Infeasible | Test Cases | Exploits |
+|----------|----------------|-------|----------|------------|------------|----------|
+| ... | ... | ... | ... | ... | ... | ... |
 
 ### Fuzz Testing Files
 
@@ -182,20 +191,10 @@ Create `olympix-results/report.md`:
 
 ### [Severity] finding_name
 
-**Unit Name:** function_name
-**Location:** file_path, contract — function/scope
-**Description:** Full description with inline code references.
-**PoC Summary:** `test/poc/filename.t.sol` — description of the PoC.
+**File:** file_path:line_number
+**Description:** Full description.
 
 (Repeat for each finding, ordered by severity: Critical > High > Medium > Low)
-
-### BugPocer PDF
-
-[Link to PDF if available]
-
-### BugPocer PoCs
-
-[Link to bugpocer_pocs/full-run/ directory]
 
 ---
 
