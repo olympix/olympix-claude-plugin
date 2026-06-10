@@ -66,6 +66,8 @@ This returns all sessions across services:
 
 Identify `Completed` sessions to download results from.
 
+**If no sessions are returned:** re-check authentication (run the `auth` skill), then retry. If still empty, the tools were never run from this machine — note affected sections as "Not run" in the report.
+
 #### 3b. Download Mutation Test Results
 
 ```bash
@@ -209,3 +211,25 @@ Tell the user:
 - Report generated at `olympix-results/report.md`
 - Any missing sections and how to fill them
 - Suggest reviewing the report before sharing
+
+## Quick Reference
+
+| Step | Action |
+|------|--------|
+| 1 | Create `olympix-results/` directory structure |
+| 2 | Verify `olympix-static.md` exists (else run `static-analysis`) |
+| 3 | Download mutation/unit/BugPocer results via `olympix sessions --agent` + `connect_session` |
+| 4 | Handle missing/in-progress/failed sessions |
+| 5 | Generate `olympix-results/report.md` |
+| 6 | Report to user |
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `olympix sessions --agent` returns nothing | Re-run the `auth` skill; if still empty, mark sections "Not run" |
+| Session still `InProgress` | Poll and wait, or mark "In progress" and offer to re-assemble later |
+| Session `Failed` | Include the `error_message` in the report |
+| Fuzz tests have no agent-mode results | Ask the user to paste/forward the email or save attachments to `olympix-results/fuzz_test/` |
+| Static analysis not run | Run `static-analysis` skill first or skip the section |
+| BugPocer not run | Mark as "Not run" — it's optional |

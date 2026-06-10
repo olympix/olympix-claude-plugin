@@ -266,10 +266,18 @@ printf '{"action":"new_session"}\n{"action":"confirm_all"}\n{"action":"disconnec
 
 Record the **session_id**.
 
+**Options:**
+- `--agent` — agent mode, JSONL stdin/stdout (required for this skill)
+- `-w .` — workspace directory (paths resolve relative to this)
+- `-p <path>` — contract file to generate tests for (repeat per contract)
+- `-ca` — confirm all contracts without interactive selection
+
 **Rules:**
 - `-p` specifies which contract file(s) to generate tests for (relative to workspace)
 - `-ca` confirms all contracts without interactive selection
 - Maximum 10 contracts per run
+
+**If the dispatch errors or no `results_ready` arrives:** re-check authentication (run the `auth` skill) and that each `-p` path exists, then retry.
 
 ### Step 12: Wait for Completion
 
@@ -279,7 +287,9 @@ Poll the session status periodically (every ~90 seconds) until `Completed` or `F
 olympix sessions --agent
 ```
 
-Look for the session ID in the `unit_tests` array.
+Look for the session ID in the `unit_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
+
+**If status is `Failed`:** stop polling and go to Step 13 to read the `error_message`.
 
 ### Step 13: Retrieve Results
 
@@ -321,3 +331,33 @@ Tell the user:
 - Coverage improvements per contract
 - Total tests generated and pass rate
 - Results saved in `olympix-results/unit_test/unit_test_results.md`
+
+## Quick Reference
+
+| Step | Command / Action | Gate |
+|------|-----------------|------|
+| 0 | Run `auth` skill | Must be authenticated |
+| 1 | `forge coverage --ir-minimum --allow-failure` | HARD STOP on repo-wide stack-too-deep |
+| 2 | Detect `{TEST_DIR}` and `{SOLC_PRAGMA}` | — |
+| 3 | Create `{TEST_DIR}/OpixUnitTests.sol` | — |
+| 4 | Identify top 10 concrete contracts | Concrete contracts only |
+| 5 | Create `Opix{Contract}Test.t.sol` templates | Exact inheritance pattern |
+| 6 | `forge coverage --ir-minimum --allow-failure` | Must compile |
+| 7 | Add `setUp()` functions | — |
+| 8 | Add 2-4 `test_example_` functions | All must pass |
+| 9 | `forge coverage --ir-minimum --allow-failure` | Must compile |
+| 10 | `olympix generate-unit-tests -w . --list --agent` | Contracts appear in list |
+| 11 | `olympix generate-unit-tests -w . -p ... -ca --agent` | Record session_id |
+| 12 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
+| 13 | `olympix unit-testing --agent` (connect_session) | Retrieve results |
+| 14 | Save results + report to user | — |
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| Repo-wide stack-too-deep under coverage | HARD STOP — do not create files or dispatch |
+| `Contract 'X' not found` | Abstract/library scaffolded — use a concrete inheritor or mock |
+| Zero tests generated | Scaffold had no `test_example_` functions — add 2-4 and re-dispatch |
+| Example tests fail | Fix setUp/mocks until `forge test --match-test 'test_example_'` passes |
+| Session status `Failed` | Read `error_message` from the results event |

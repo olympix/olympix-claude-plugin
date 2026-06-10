@@ -11,7 +11,9 @@ tools: Read, Bash
 
 Check if the Olympix CLI is authenticated. If not, instruct the user to login.
 
-## Step 1: Check Current Auth
+## Process
+
+### Step 1: Check Current Auth
 
 ```bash
 cat ~/.opix/config.json 2>/dev/null | python3 -c "
@@ -34,11 +36,11 @@ except:
 "
 ```
 
-**If VALID:** Authentication is current. Proceed.
+Decision rule, in order:
+1. **`VALID`** → authentication is current. Proceed (skip Steps 2-3).
+2. **`NO_CONFIG`, `NO_TOKEN`, or `EXPIRED`** → go to Step 2.
 
-**If NO_CONFIG, NO_TOKEN, or EXPIRED:** Go to Step 2.
-
-## Step 2: Instruct User to Login
+### Step 2: Instruct User to Login
 
 Tell the user:
 
@@ -46,7 +48,7 @@ Tell the user:
 
 Wait for the user to confirm they're logged in.
 
-## Step 3: Verify Login
+### Step 3: Verify Login
 
 After the user confirms:
 
@@ -54,4 +56,11 @@ After the user confirms:
 olympix org-seats
 ```
 
-If it shows seat info, authentication is complete.
+Decision rule:
+- **Seat info is shown** → authentication is complete. Proceed.
+- **Command errors or shows no seats** → login did not take. Ask the user to re-run `! olympix login -e your@email.com` and re-run this step. **HARD STOP** if it cannot be made to succeed — downstream skills require auth.
+
+## Important Notes
+
+- This skill is **interactive-only** — it never automates the login or reads the verification code. The user enters the code at the `olympix login` prompt.
+- Token expiry is read from the JWT `exp` claim in `~/.opix/config.json`; a missing or malformed config is treated as unauthenticated.

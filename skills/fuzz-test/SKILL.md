@@ -30,6 +30,8 @@ Run the `auth` skill to check authentication.
 
 Read and follow `skills/_shared/forge-setup.md`.
 
+**If it fails:** initialize the repo per the README. **HARD STOP** if it cannot be fixed — the repo must compile for fuzz test generation.
+
 ### Step 2: Identify Top 3 Most Critical Contracts
 
 Read `skills/_shared/contract-selection.md` for the full criteria. Select only the **top 3**.
@@ -44,6 +46,10 @@ Build the command using `-p` flags for each contract path:
 olympix generate-fuzz-tests -w . -p src/Contract1.sol -p src/Contract2.sol -p src/Contract3.sol
 ```
 
+**Options:**
+- `-w .` — workspace directory (paths resolve relative to this)
+- `-p <path>` — contract file to fuzz (repeat once per contract, max 3)
+
 **Rules:**
 - Use the **file path** (not the contract name) for each `-p` argument
 - Paths should be relative to the repo root
@@ -52,4 +58,19 @@ olympix generate-fuzz-tests -w . -p src/Contract1.sol -p src/Contract2.sol -p sr
 
 Report the session ID and output to the user. Results arrive via email — ask the user to check their inbox.
 
-**Note:** Unlike mutation tests and unit tests, fuzz test results cannot be retrieved via agent mode. The user must check their email for results.
+**If `op`/auth fails:** re-run the `auth` skill, then retry the command.
+
+## Important Notes
+
+- **Agent mode is NOT supported** for fuzz test generation — never pass `--agent`. This tool runs in TUI/standard mode only.
+- **Results arrive via email only.** Unlike mutation tests and unit tests, fuzz test results cannot be retrieved programmatically. The user must check their inbox.
+- **Maximum 3 contracts per run** — select only the top 3 most critical contracts.
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `forge build` fails | Install deps per README; HARD STOP if unfixable |
+| `--agent` error about unsupported mode | Remove `--agent` — fuzz tests run in standard mode only |
+| Contract path wrong | Verify the path exists with `ls`; use relative path from repo root |
+| `op`/auth fails | Re-run the `auth` skill, then retry the command |

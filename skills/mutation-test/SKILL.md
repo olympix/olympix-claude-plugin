@@ -28,7 +28,9 @@ Run the `auth` skill to check authentication.
 
 Read and follow `skills/_shared/forge-setup.md`.
 
-**NOTE:** `forge test --via-ir` is NOT required. The Olympix CLI handles viaIR compilation server-side. You only need basic `forge build` to pass locally.
+**If it fails:** initialize the repo per the README. **HARD STOP** if `forge build` cannot be made to pass.
+
+**NOTE:** `forge test --via-ir` is NOT required. The Olympix CLI handles viaIR compilation server-side. You only need basic `forge build` to pass locally. A repo that fails `forge test --via-ir` locally due to stack-too-deep can still successfully generate mutation tests via the Olympix CLI.
 
 ### Step 2: Identify Top 10 Most Critical Contracts
 
@@ -53,10 +55,17 @@ printf '{"action":"new_session"}\n{"action":"disconnect"}\n' \
 
 Record the **session_id** from the `results_ready` event.
 
+**Options:**
+- `--agent` — agent mode, JSONL stdin/stdout (required for this skill)
+- `-w .` — workspace directory (paths resolve relative to this)
+- `-p <path>` — contract file to mutate (repeat once per contract)
+
 **Rules:**
 - Use the **file path** (not the contract name) for each `-p` argument
 - Paths should be relative to the repo root (resolved relative to `-w` workspace)
 - Maximum 10 contracts per run
+
+**If the dispatch errors or no `results_ready` arrives:** re-check authentication (run the `auth` skill) and that each `-p` path exists, then retry.
 
 ### Step 4: Wait for Completion
 
@@ -67,6 +76,8 @@ olympix sessions --agent
 ```
 
 Look for the session ID in the `mutation_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
+
+**If status is `Failed`:** stop polling and go to Step 5 to read the `error_message`.
 
 ### Step 5: Retrieve Results
 
@@ -113,3 +124,25 @@ Tell the user:
 - How many mutations killed vs survived
 - Which surviving mutations represent real coverage gaps
 - Results saved in `olympix-results/mutation_test/mutation_results.md`
+
+## Quick Reference
+
+| Step | Command / Action | Gate |
+|------|-----------------|------|
+| 0 | Run `auth` skill | Must be authenticated |
+| 1 | Follow `skills/_shared/forge-setup.md` | `forge build` must pass |
+| 2 | Identify top 10 contracts | Concrete contracts only |
+| 3 | `olympix generate-mutation-tests -w . -p ... --agent` | Record session_id |
+| 4 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
+| 5 | `olympix mutation-testing --agent` (connect_session) | Retrieve results |
+| 6 | Save `olympix-results/mutation_test/mutation_results.md` | — |
+| 7 | Report to user | — |
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `forge build` fails | Install deps per README; HARD STOP if unfixable |
+| Contract path wrong | Verify the path exists with `ls`; use relative path from repo root |
+| Session status `Failed` | Read `error_message` (often a `forge test` compilation error) |
+| `op`/auth fails on dispatch | Re-run the `auth` skill, then retry the command |

@@ -3,3 +3,10 @@
 
 # OS files
 .DS_Store
+
+# Local Olympix agent-mode session cache
+.opix/
+
+# Foundry build output (fixtures)
+fixtures/**/out/
+fixtures/**/cache/

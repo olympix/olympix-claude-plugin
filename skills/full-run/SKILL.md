@@ -28,6 +28,8 @@ Run the `auth` skill to check authentication. This is checked once here — indi
 
 Read and follow `skills/_shared/forge-setup.md`. This is a shared prerequisite for all tools — fix it once here.
 
+**If it fails:** initialize the repo per the README. **HARD STOP** if `forge build` cannot be made to pass — none of the tools can run without it.
+
 ### Step 2: Run Static Analysis
 
 Invoke the `static-analysis` skill workflow:
@@ -63,7 +65,9 @@ Invoke the `unit-test` skill workflow:
 
 ### Step 5: Wait for Mutation + Unit Test Results
 
-Poll `olympix sessions --agent` every ~90 seconds until both sessions show `Completed` or `Failed`. Then retrieve results:
+Poll `olympix sessions --agent` every ~90 seconds until both sessions show `Completed` or `Failed`. Then retrieve results.
+
+**If either session is `Failed`:** capture its `error_message`, note it in the Step 8 summary, and continue with the other results — do not abort the run.
 
 **Mutation test results:**
 ```bash
@@ -120,9 +124,24 @@ Tell the user:
 - Run `/olympix:assemble-report` to compile the final report
 - Fuzz test results (if run) will arrive via email
 
-## Key Rules
+## Quick Reference
+
+| Step | Tool | Command / Action | Mode |
+|------|------|-----------------|------|
+| 0 | Auth | Run `auth` skill (once) | — |
+| 1 | Build | Follow `skills/_shared/forge-setup.md` (once) | HARD STOP if unfixable |
+| 2 | Static Analysis | `olympix analyze -w . --agent` | Synchronous |
+| 3 | Mutation Tests | `olympix generate-mutation-tests -w . -p ... --agent` | Async — record session_id |
+| 4 | Unit Tests | `olympix generate-unit-tests -w . -p ... -ca --agent` | Async — record session_id |
+| 5 | Wait + retrieve | Poll `olympix sessions --agent`, then `mutation-testing` / `unit-testing` | — |
+| 6 | BugPocer | `bug-pocer` skill workflow | Async — poll for scan |
+| 7 | Fuzz Tests (opt.) | `olympix generate-fuzz-tests -w . -p ...` | NO `--agent`, email only |
+| 8 | Summary | Present table + next steps | — |
+
+## Important Notes
 
 - **Do the codebase analysis ONCE** — identify all critical contracts in Step 3, then reuse that analysis for Steps 4 and 7.
 - **Contract selection overlaps are fine** — the top 3 for fuzz tests will be a subset of the top 10 for mutation tests.
 - **Don't stop on partial failure** — if one tool fails, note it and continue with the others.
 - **Wait for results** — do not mark mutation/unit test steps as done until results are actually retrieved.
+- **Fuzz tests are email-only** — they do NOT support `--agent`; results never come back programmatically.

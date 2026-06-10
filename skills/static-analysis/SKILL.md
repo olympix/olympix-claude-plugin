@@ -28,6 +28,8 @@ Run the `auth` skill to check authentication.
 
 Read and follow `skills/_shared/forge-setup.md`.
 
+**If it fails:** initialize the repo per the README. **HARD STOP** if it cannot be fixed.
+
 ### Step 2: Run Static Analysis
 
 ```bash
@@ -35,7 +37,14 @@ mkdir -p olympix-results
 olympix analyze -w . --agent
 ```
 
-This runs the analyzer in agent mode. Output is a single JSONL line:
+This runs the analyzer in agent mode.
+
+**Options:**
+- `--agent` — agent mode, single-line JSONL output (required for this skill)
+- `-w .` — workspace directory (current directory)
+- `-p <path>` — restrict analysis to a specific directory (can repeat)
+
+Output is a single JSONL line:
 
 ```json
 {"event":"findings_ready","data":{"findings":[{"id":"...","title":"...","description":"...","file_path":"...","line_number":0}]}}
@@ -111,3 +120,22 @@ Tell the user:
 | `-ail` | Enable AI layer to prune findings |
 | `-aic <level>` | AI confidence threshold (high/medium/low) |
 | `--no-<vuln-id>` | Ignore specific vulnerability type |
+
+## Quick Reference
+
+| Step | Command / Action | Gate |
+|------|-----------------|------|
+| 0 | Run `auth` skill | Must be authenticated |
+| 1 | Follow `skills/_shared/forge-setup.md` | Must compile |
+| 2 | `olympix analyze -w . --agent` | Synchronous — waits for results |
+| 3 | Parse JSONL → `olympix-results/olympix-static.md` | — |
+| 4 | Report summary to user | — |
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `forge build` fails | Install deps per README; HARD STOP if unfixable |
+| No Solidity files in workspace | CLI emits `error` event, exit code 1 — report to user |
+| Agent-mode output not parseable | Fall back to `olympix analyze -f json -o .` and parse the JSON file |
+| Too many low-severity findings | Use `-ail` to enable AI pruning, or `-aic medium` to hide low-confidence findings |
