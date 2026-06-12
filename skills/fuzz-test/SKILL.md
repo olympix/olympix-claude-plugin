@@ -1,11 +1,12 @@
 ---
 name: fuzz-test
 description: >
-  Prepares a Foundry-based Solidity repo for Olympix fuzz test generation.
-  Verifies the repo builds, identifies the top 3 most critical contracts,
-  then runs olympix generate-fuzz-tests. Agent mode is NOT supported for fuzz tests.
+  Use when the user wants Olympix fuzz test generation prepared and dispatched for a
+  Foundry-based Solidity repo — verifies the repo builds, identifies the top 3 most
+  critical contracts, then runs olympix generate-fuzz-tests. Agent mode is NOT
+  supported for fuzz tests.
   TRIGGER: "fuzz tests", "fuzz test", "generate fuzz tests", "fuzzing", "fuzz-test"
-tools: Read, Glob, Grep, Bash, Agent
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill
 ---
 
 # Fuzz Test Generation
@@ -28,13 +29,13 @@ Run the `auth` skill to check authentication.
 
 ### Step 1: Verify Repository Builds
 
-Read and follow `skills/_shared/forge-setup.md`.
+Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`.
 
 **If it fails:** initialize the repo per the README. **HARD STOP** if it cannot be fixed — the repo must compile for fuzz test generation.
 
 ### Step 2: Identify Top 3 Most Critical Contracts
 
-Read `skills/_shared/contract-selection.md` for the full criteria. Select only the **top 3**.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md` for the full criteria. Select only the **top 3**.
 
 List the selected contracts with their file paths relative to the repo root before proceeding.
 
@@ -56,7 +57,7 @@ olympix generate-fuzz-tests -w . -p src/Contract1.sol -p src/Contract2.sol -p sr
 - Maximum 3 contracts per run
 - Do NOT use `--agent` — it will error with "Agent mode is not supported for generate-fuzz-tests yet."
 
-Report the session ID and output to the user. Results arrive via email — ask the user to check their inbox.
+Report the session ID and output to the user. Results arrive via email — ask the user to check their inbox. When the result email needs to be located later (by the user or any mail tooling), search by the **session ID (UUID)** — never by date or subject, which are ambiguous across runs.
 
 **If `op`/auth fails:** re-run the `auth` skill, then retry the command.
 

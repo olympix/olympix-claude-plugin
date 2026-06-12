@@ -1,12 +1,12 @@
 ---
 name: assemble-report
 description: >
-  Assembles all Olympix tool results into an olympix-results directory with
-  a final markdown report. Collects static analysis, mutation tests, unit tests,
-  fuzz tests, and BugPocer findings into a structured deliverable.
+  Use when the user wants all Olympix tool results assembled into an olympix-results
+  directory with a final markdown report — collects static analysis, mutation tests,
+  unit tests, fuzz tests, and BugPocer findings into a structured deliverable.
   Results can be downloaded directly via agent mode or provided manually.
   TRIGGER: "assemble report", "final report", "olympix report", "collect results", "deliverable"
-tools: Read, Glob, Grep, Bash, Agent
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill
 ---
 
 # Assemble Olympix Report
@@ -17,6 +17,16 @@ Collect all Olympix tool results into a structured `olympix-results/` directory 
 
 - Static analysis has been run (should already be in `olympix-results/olympix-static.md`)
 - Working directory is the root of the Foundry project
+
+## CLI Capability Check
+
+Downloading results requires agent mode (`--agent`); older Olympix CLIs do not support it. Probe first:
+
+```bash
+olympix sessions --help 2>&1 | grep -q -- --agent && echo AGENT_MODE || echo LEGACY_CLI
+```
+
+If `LEGACY_CLI` (the `--agent` flag is rejected), the CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if the CLI still lacks `--agent`.
 
 ## Output Structure
 
@@ -64,7 +74,15 @@ This returns all sessions across services:
 {"event":"all_sessions","data":{"bug_pocer":[...],"unit_tests":[...],"mutation_tests":[...]}}
 ```
 
-Identify `Completed` sessions to download results from.
+Identify the sessions that are done — the "done" status differs **per array**:
+
+| Array | Done status | Failure status |
+|-------|-------------|----------------|
+| `unit_tests` | `Completed` | `Failed` |
+| `mutation_tests` | `Completed` | `Failed` |
+| `bug_pocer` | `InitialScanCompleted` | — (Killed sessions are not retrievable) |
+
+BugPocer sessions **never** reach `Completed` — `InitialScanCompleted` is their terminal "ready" state.
 
 **If no sessions are returned:** re-check authentication (run the `auth` skill), then retry. If still empty, the tools were never run from this machine — note affected sections as "Not run" in the report.
 
@@ -101,11 +119,11 @@ printf '{"action":"disconnect"}\n' \
   | olympix connect-bp-session -s <session-id> -w . --agent
 ```
 
-Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`.
+Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`, plus the verdict/PoC fields: `bugpocer_verdict`, `user_verdict`, `user_verdict_reason`, `effective_verdict`, `confidence_score`, `poc_summary`, `poc_content`. Report verdicts by `effective_verdict`, distinguishing BugPocer's automated call from human review (`user_verdict` = `unreviewed` until a human sets it).
 
 Also available at `.opix/agent/<session-id>/findings.json`.
 
-Parse and save to `olympix-results/bugpocer_pocs/findings.md`.
+Parse and save to `olympix-results/bugpocer_pocs/findings.md` — the same path the `bug-pocer` skill writes, so re-assembly overwrites rather than duplicates.
 
 #### 3e. Fuzz Test Results (Manual Only)
 
@@ -113,13 +131,15 @@ Fuzz tests do NOT support agent mode. If fuzz tests were run, ask the user to pr
 
 > Fuzz test results can't be downloaded automatically. Please paste or forward the result email so I can extract metrics, or save attachments to `olympix-results/fuzz_test/`.
 
+**Determinism rule when an email is searched** (by the user, or via any mail tooling available): locate the result email by the **session ID (UUID)** — it is guaranteed unique. Never search by date or subject; both are ambiguous across runs.
+
 ### Step 4: Handle Missing Results
 
 For any tool that wasn't run or has no completed sessions:
 
 - **No sessions found:** Mark as "Not run" in the report
 - **Sessions still InProgress:** Poll `olympix sessions --agent` and wait, or mark as "In progress" and offer to check later
-- **Failed sessions:** Include the error message in the report
+- **Failed sessions:** Include the error message in the report. Note: `olympix sessions --agent` does NOT populate `error_message` — to get it, reconnect via `olympix mutation-testing --agent` / `olympix unit-testing --agent`: the `sessions_list` event emitted there carries `error_message` per session, and connecting to a Failed session returns a `results_ready` event whose message is `"Generation failed: <error>"`
 
 ### Step 5: Generate Final Report
 
@@ -229,7 +249,8 @@ Tell the user:
 |---------|----------|
 | `olympix sessions --agent` returns nothing | Re-run the `auth` skill; if still empty, mark sections "Not run" |
 | Session still `InProgress` | Poll and wait, or mark "In progress" and offer to re-assemble later |
-| Session `Failed` | Include the `error_message` in the report |
+| Session `Failed` | `olympix sessions --agent` does not carry `error_message` — get it from the `sessions_list` event during `mutation-testing`/`unit-testing --agent` retrieval, or from the `results_ready` "Generation failed: ..." message |
+| `--agent` flag rejected | CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe |
 | Fuzz tests have no agent-mode results | Ask the user to paste/forward the email or save attachments to `olympix-results/fuzz_test/` |
 | Static analysis not run | Run `static-analysis` skill first or skip the section |
 | BugPocer not run | Mark as "Not run" — it's optional |

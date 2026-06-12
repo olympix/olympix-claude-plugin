@@ -10,52 +10,43 @@ Olympix is a smart contract security analysis platform that runs static analysis
 
 ## Installation
 
-### Quick start
+### Recommended: install from GitHub
+
+This repo is a self-hosting Claude Code plugin marketplace. Inside Claude Code, run:
+
+```
+/plugin marketplace add olympix/olympix-claude-plugin
+/plugin install olympix@olympix
+```
+
+Then restart Claude Code. That's it — no clone or setup script needed.
+
+### Fallback: setup script (local clone)
+
+If you can't use the marketplace flow (e.g. air-gapped or developing the plugin itself):
 
 ```bash
 git clone https://github.com/olympix/olympix-claude-plugin.git
-cd olympix-claude-plugin
-scripts/setup.sh
+olympix-claude-plugin/scripts/setup.sh
 ```
 
-The setup script checks prerequisites, creates a marketplace wrapper, registers the plugin with Claude Code, and adds CLI permissions. Restart Claude Code after running it.
+The setup script checks prerequisites, creates a local marketplace wrapper, registers the plugin with Claude Code, and adds CLI permissions. Restart Claude Code after running it.
+
+It offers two scopes:
+
+- **Global** — registers the plugin for all projects (`~/.claude/settings.json`). Run it from anywhere.
+- **Workspace** — registers the plugin only for the current directory (writes `$PWD/.claude/settings.local.json`). **Run the script from the target project directory** (e.g. `cd ~/my-foundry-project && /path/to/olympix-claude-plugin/scripts/setup.sh`), not from the plugin checkout.
 
 ### Manual install
 
 1. Clone this repo
-2. Create a marketplace wrapper (sibling directory):
-   ```bash
-   PLUGIN_DIR="$(pwd)/olympix-claude-plugin"
-   MARKETPLACE_DIR="$(pwd)/olympix-plugin-marketplace"
-
-   mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
-   ln -s "$PLUGIN_DIR" "$MARKETPLACE_DIR/olympix-claude-plugin"
-
-   cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << 'EOF'
-   {
-     "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-     "name": "olympix",
-     "description": "Olympix smart contract security tools for Claude Code",
-     "owner": { "name": "Olympix", "email": "engineering@olympix.ai" },
-     "plugins": [
-       {
-         "name": "olympix-claude-plugin",
-         "description": "Run Olympix security tools from Claude Code",
-         "source": "./olympix-claude-plugin",
-         "category": "development"
-       }
-     ]
-   }
-   EOF
-   ```
-
-3. Add to your Claude Code settings (`~/.claude/settings.json`):
+2. Add to your Claude Code settings (`~/.claude/settings.json`), pointing the marketplace at your clone (it ships its own `.claude-plugin/marketplace.json`):
    ```json
    {
-     "enabledPlugins": { "olympix-claude-plugin@olympix": true },
+     "enabledPlugins": { "olympix@olympix": true },
      "extraKnownMarketplaces": {
        "olympix": {
-         "source": { "source": "directory", "path": "/absolute/path/to/olympix-plugin-marketplace" }
+         "source": { "source": "directory", "path": "/absolute/path/to/olympix-claude-plugin" }
        }
      },
      "permissions": {
@@ -64,7 +55,7 @@ The setup script checks prerequisites, creates a marketplace wrapper, registers 
    }
    ```
 
-4. Restart Claude Code.
+3. Restart Claude Code.
 
 ## Usage
 
@@ -116,3 +107,4 @@ All results auto-persist to `.opix/agent/` inside the workspace directory.
 | `forge build` fails | Install dependencies per project README |
 | Stack-too-deep | Some contracts incompatible with unit test coverage mode |
 | Fuzz `--agent` error | Agent mode not supported for fuzz tests — run without `--agent` |
+| `--agent` flag rejected / unknown option | Olympix CLI too old — run `olympix update` |

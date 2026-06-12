@@ -1,11 +1,12 @@
 ---
 name: bug-pocer
 description: >
-  Runs Olympix BugPocer security analysis fully automated via agent mode.
-  Handles the entire flow: scope review, validation, security questions (incl. follow-ups),
-  scan, findings retrieval with verdicts, Q&A, and built-in PDF + PoC export — all driven programmatically.
+  Use when the user wants Olympix BugPocer security analysis run fully automated via
+  agent mode — handles the entire flow: scope review, validation, security questions
+  (incl. follow-ups), scan, findings retrieval with verdicts, Q&A, and built-in
+  PDF + PoC export, all driven programmatically.
   TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer"
-tools: Read, Glob, Grep, Bash, Agent
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill
 ---
 
 # BugPocer Security Analysis
@@ -18,6 +19,16 @@ Run Olympix BugPocer on a Foundry-based Solidity repository fully automated via 
 - `olympix` CLI installed and authenticated
 - Working directory is the root of a Foundry project
 
+## CLI Capability Check
+
+This skill requires agent mode (`--agent`); older Olympix CLIs do not support it. Probe first:
+
+```bash
+olympix bug-pocer --help 2>&1 | grep -q -- --agent && echo AGENT_MODE || echo LEGACY_CLI
+```
+
+If `LEGACY_CLI` (the `--agent` flag is rejected), the CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if the CLI still lacks `--agent`.
+
 ## Process
 
 ### Step 0: Verify Olympix Authentication
@@ -26,46 +37,64 @@ Run the `auth` skill to check authentication.
 
 ### Step 1: Verify Repository Builds
 
-Read and follow `skills/_shared/forge-setup.md`.
+Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`.
 
 ### Step 2: Start BugPocer Session
 
-The BugPocer flow is stateful and interactive via stdin/stdout JSONL. Use a Python subprocess to drive it:
+The BugPocer flow is stateful and interactive via stdin/stdout JSONL, and it must be driven across **multiple separate Bash calls** — you cannot hold one long-lived interactive process open inside a single tool call. Drive it with a background process whose stdin is a FIFO and whose stdout goes to a log file:
 
-```python
-import subprocess, json, threading, queue
-
-CMD = ["olympix", "bug-pocer", "-w", "<workspace-path>", "--agent"]
-
-event_q = queue.Queue()
-
-def reader_thread(proc):
-    for line in proc.stdout:
-        line = line.strip()
-        if line:
-            try:
-                event_q.put(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-
-def send(proc, action, data=None):
-    msg = {"action": action}
-    if data:
-        msg["data"] = data
-    proc.stdin.write(json.dumps(msg) + "\n")
-    proc.stdin.flush()
-
-def read_event(timeout=300):
-    try:
-        return event_q.get(timeout=timeout)
-    except queue.Empty:
-        return None
-
-proc = subprocess.Popen(CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL, text=True, bufsize=1)
-t = threading.Thread(target=reader_thread, args=(proc,), daemon=True)
-t.start()
+```bash
+# 1. Create a FIFO for the CLI's stdin
+rm -f .opix-bp-in && mkfifo .opix-bp-in
 ```
+
+Then hold the FIFO's write end open so each per-action write does not deliver EOF to the CLI when the writer closes. **Launch the holder via a `run_in_background` Bash call** (or `nohup`/`setsid`) — a plain `&` job may be reaped when its foreground Bash call ends — and capture its PID to a file (job specs like `%1` do NOT survive across Bash calls):
+
+```bash
+# 2. Run this entire snippet in a run_in_background Bash call:
+echo $$ > .opix-bp-holder.pid
+exec sleep 3600 > .opix-bp-in
+```
+
+(`exec` keeps the holder on the recorded PID. Non-background equivalent: `nohup sh -c 'echo $$ > .opix-bp-holder.pid; exec sleep 3600 > .opix-bp-in' >/dev/null 2>&1 &`.)
+
+Then start the CLI with another `run_in_background` Bash call, stdin attached to the FIFO, stdout redirected to a log:
+
+```bash
+olympix bug-pocer -w . --agent < .opix-bp-in > .opix-bp-events.log 2>&1
+```
+
+Drive each exchange in its own Bash call:
+
+```bash
+# Read any NEW events since your last check (track the line count)
+tail -n +<last_seen_line + 1> .opix-bp-events.log
+
+# Liveness check BEFORE writing: holder alive AND the CLI background task still running
+kill -0 "$(cat .opix-bp-holder.pid)" 2>/dev/null || echo "HOLDER GONE — relaunch it before writing"
+
+# Send exactly one JSON action into the FIFO — ALWAYS via a 5s write watchdog:
+# if the CLI has exited, a FIFO write blocks forever (no reader). Do NOT use
+# `timeout` here — it does not exist on stock macOS; perl ships everywhere:
+perl -e 'alarm 5; open(my $f, ">", ".opix-bp-in") or die "open failed: $!"; print $f "$ARGV[0]\n"' '{"action":"confirm_all"}'
+```
+
+(On Linux or where coreutils is installed, GNU `timeout` — `gtimeout` from `brew install coreutils` on macOS — is an equivalent watchdog: `timeout 5 sh -c 'printf '\''{"action":"confirm_all"}\n'\'' > .opix-bp-in'`.)
+
+**Before each write**, check the log for new events and confirm the CLI is still running (the background CLI task has not exited / the log does not end in a terminal `error` or completion event). If the watchdog write times out (perl exits with status 142 after ~5s), the CLI is gone — read the log to see why instead of retrying the write.
+
+Repeat: read new events from the log → decide → write the next action into the FIFO.
+
+**300-second input timeout:** the CLI waits at most **300 seconds** for each stdin answer. If you exceed it between answers, the CLI emits `{"event":"error","data":{"message":"Timeout waiting for input"}}`. Newer CLIs re-emit the pending event on timeout instead of aborting, but do not rely on that — stay under 300s per answer.
+
+**Cleanup:** when the flow ends (`validation_submitted` or after `disconnect`), kill the holder by PID and remove the FIFO:
+
+```bash
+kill "$(cat .opix-bp-holder.pid)" 2>/dev/null
+rm -f .opix-bp-in .opix-bp-holder.pid
+```
+
+(Use the PID file — job specs like `%1` don't survive across Bash calls.)
 
 ### Step 3: New Session Flow
 
@@ -81,8 +110,10 @@ Send `new_session` to start a new session, or `connect_session` with a session I
 
 #### 3b. Scope Review
 ```json
-{"event":"scope_review","data":{"contracts":[...],"libraries":[...],"functions":[...]},"actions":["select_scope","confirm_all","disconnect"]}
+{"event":"scope_review","data":{"contracts":[{"name":"Vault","file":"src/Vault.sol","functions":[{"name":"deposit","visibility":"public"}]}],"libraries":[...]},"actions":["select_scope","confirm_all","disconnect"]}
 ```
+
+The `data` payload has only `contracts` and `libraries` (there is no top-level `functions` array) — functions are nested per contract/library as `{name, file, functions: [{name, visibility}]}`.
 
 Send `confirm_all` to include everything, or `select_scope` with exclusions:
 ```json
@@ -149,11 +180,11 @@ keep doing other work between polls rather than blocking.
 
 ### Step 5: Retrieve Findings
 
-Reconnect to the completed session:
+Reconnect to the completed session. If you only need the findings, a one-shot pipe is enough:
 
-```python
-CMD = ["olympix", "connect-bp-session", "-s", "<session-id>",
-       "-w", "<workspace-path>", "--agent"]
+```bash
+printf '{"action":"disconnect"}\n' \
+  | olympix connect-bp-session -s <session-id> -w <workspace-path> --agent
 ```
 
 Or via the `bug-pocer` command:
@@ -161,6 +192,8 @@ Or via the `bug-pocer` command:
 printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"disconnect"}\n' \
   | olympix bug-pocer -w <path> --agent
 ```
+
+If you intend to continue with Q&A, PDF export, or PoC export (Steps 6-8), reconnect using the **FIFO driver from Step 2** instead (`olympix connect-bp-session -s <id> -w . --agent < .opix-bp-in > .opix-bp-events.log 2>&1`), so you can keep sending actions interactively.
 
 **Expected output:**
 ```
@@ -192,6 +225,8 @@ After receiving findings, ask questions about them:
 ```
 
 Flow: `progress` "Question sent" → `qa_waiting` → `question_answered` with `answer` field.
+
+After `question_answered`, the valid actions are only `ask_question`, `fetch_findings`, and `disconnect` — `generate_pdf` and `save_pocs` are NOT accepted here; send `fetch_findings` to re-enter `findings_ready` first, then export.
 
 Q&A exchanges auto-persist to `.opix/agent/<session-id>/qa.json`.
 
@@ -229,7 +264,7 @@ This writes one PoC file per finding (named by unit + vulnerability). Report the
 
 ### Step 9: Save Results
 
-Also persist a human-readable summary to `olympix-results/bugpocer_pocs/`:
+Also persist a human-readable summary to `olympix-results/bugpocer_pocs/findings.md` (this exact path — the `assemble-report` skill reads it):
 
 ```markdown
 # BugPocer Findings
@@ -262,9 +297,22 @@ Tell the user:
 - **Cost warning:** Each new BugPocer session triggers LLM calls on the backend. Avoid creating unnecessary sessions.
 - **Cross-mode safety:** After agent-mode submission, `pending_validation_payload` is NULL in the database — no stale state for TUI mode.
 - **Reconnecting:** Use `connect-bp-session -s <id>` or `bug-pocer` → `connect_session` action to reconnect to any existing session.
-- **Killed sessions:** Reconnecting to a killed session returns `findings_ready` with an empty findings array (no hang).
+- **Killing a session:** `olympix kill-bp-session -s <session-id> --agent` emits
+  `{"event":"session_killed","data":{"session_id":"<id>","was_running":true|false}}` and exits —
+  `was_running: false` means the session was not running or had already completed.
+- **Killed sessions:** Reconnecting to a Killed session does NOT return findings. The CLI emits an `error` event — `"Failed to retrieve session data. Session may be Killed or inaccessible."` — and exits, or times out with `"Timed out connecting to session '<id>'. Session may be Killed, expired, or unreachable."`. Report this to the user instead of retrying.
 - **PDF/PoC export are post-findings actions:** `generate_pdf` and `save_pocs` are only valid after a
   `findings_ready` event (i.e. on a completed session). They re-emit the same action set so you can chain them.
 - **Verdicts are two independent fields:** `bugpocer_verdict` (automated) and `user_verdict` (human override,
   `unreviewed` until set). Always report both; collapse to `effective_verdict` only for a single final call.
 - **Security questions are not optional noise:** answer them from the repo. Skipping degrades scan quality.
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `--agent` flag rejected | CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe |
+| `Timeout waiting for input` error | You exceeded the 300s stdin timeout between answers — reconnect and answer faster |
+| CLI exits as soon as you echo an action | The FIFO write end closed (EOF) — make sure the `sleep 3600 > .opix-bp-in` holder is still running (`kill -0 "$(cat .opix-bp-holder.pid)"`); relaunch it via `run_in_background` if it was reaped |
+| A FIFO write hangs / times out | The CLI exited (no reader on the FIFO) — that's why every write goes through the 5s watchdog (`perl -e 'alarm 5; open(my $f, ">", ".opix-bp-in") or die; print $f "$ARGV[0]\n"' '{"action":"..."}'`, or GNU `timeout 5` on Linux/brew); read `.opix-bp-events.log` to see why the CLI stopped |
+| Reconnect errors with "Session may be Killed..." | The session is Killed/expired — start a new session; do not retry the reconnect |

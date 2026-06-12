@@ -1,11 +1,11 @@
 ---
 name: full-run
 description: >
-  Full Olympix security analysis — runs all tools in sequence: static analysis,
-  mutation tests, unit tests, BugPocer, and optionally fuzz tests.
-  Uses agent mode for all supported tools. Retrieves results directly.
+  Use when the user wants a full Olympix security analysis — runs all tools in
+  sequence: static analysis, mutation tests, unit tests, BugPocer, and optionally
+  fuzz tests. Uses agent mode for all supported tools. Retrieves results directly.
   TRIGGER: "full run", "full-run", "run everything", "full scan", "run all tools"
-tools: Read, Glob, Grep, Bash, Agent, Skill
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
 # Full Run
@@ -18,6 +18,16 @@ Run the full Olympix security analysis suite on a Foundry-based Solidity reposit
 - `olympix` CLI installed and authenticated
 - Working directory is the root of a Foundry project
 
+## CLI Capability Check
+
+This skill requires agent mode (`--agent`); older Olympix CLIs do not support it. Probe once before starting:
+
+```bash
+olympix analyze --help 2>&1 | grep -q -- --agent && echo AGENT_MODE || echo LEGACY_CLI
+```
+
+If `LEGACY_CLI` (the `--agent` flag is rejected), the CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if the CLI still lacks `--agent`.
+
 ## Process
 
 ### Step 0: Verify Olympix Authentication
@@ -26,7 +36,7 @@ Run the `auth` skill to check authentication. This is checked once here — indi
 
 ### Step 1: Verify Repository Builds
 
-Read and follow `skills/_shared/forge-setup.md`. This is a shared prerequisite for all tools — fix it once here.
+Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`. This is a shared prerequisite for all tools — fix it once here.
 
 **If it fails:** initialize the repo per the README. **HARD STOP** if `forge build` cannot be made to pass — none of the tools can run without it.
 
@@ -45,7 +55,7 @@ This runs **synchronously** — wait for results before proceeding.
 
 Invoke the `mutation-test` skill workflow:
 
-1. Identify the top 10 most critical contracts (read `skills/_shared/contract-selection.md`)
+1. Identify the top 10 most critical contracts (read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md`)
 2. Dispatch: `printf '{"action":"new_session"}\n{"action":"disconnect"}\n' | olympix generate-mutation-tests -w . -p path1 -p path2 ... --agent`
 3. Record the **session ID** from `results_ready` event
 
@@ -58,7 +68,8 @@ Invoke the `unit-test` skill workflow:
 3. Detect solc version, create base contract and up to 10 test template files
 4. Verify coverage still passes after adding files
 5. Add setUp functions and example tests, verify again
-6. Dispatch: `printf '{"action":"new_session"}\n{"action":"confirm_all"}\n{"action":"disconnect"}\n' | olympix generate-unit-tests -w . -p <paths> -ca --agent`
+6. Dispatch: `printf '{"action":"new_session"}\n{"action":"disconnect"}\n' | olympix generate-unit-tests -w . -p <paths> --agent`
+   (do NOT send `confirm_all` — it is invalid after dispatch and can kill the dispatched job; `-ca` is a no-op in agent mode)
 7. Record the **session ID**
 
 **If unit tests hit a repo-wide stack-too-deep on coverage:** skip this step, note it in the summary, and continue.
@@ -83,13 +94,15 @@ printf '{"action":"connect_session","data":{"session_id":"<ut-id>"}}\n{"action":
 
 Save results to `olympix-results/mutation_test/` and `olympix-results/unit_test/`.
 
-### Step 6: Run BugPocer
+### Step 6: Run BugPocer (opt-in)
 
-Invoke the `bug-pocer` skill workflow:
+**Before launching, ask the user with AskUserQuestion whether to run BugPocer** (options: "Yes, run it" / "Skip for now"), citing the cost warning: each new BugPocer session triggers LLM calls on the backend and incurs scan cost. **If skipped:** note it in the Step 8 summary and continue.
 
-1. Start session via Python subprocess driver (see bug-pocer SKILL.md for full flow)
-2. Confirm scope, validation items, skip security questions, skip docs
-3. Wait for scan completion (poll `olympix sessions --agent`)
+If the user opts in, invoke the `bug-pocer` skill workflow:
+
+1. Start session via the background-process + FIFO driver (see bug-pocer SKILL.md for full flow)
+2. Confirm scope and validation items; answer security questions from the repo per the bug-pocer skill's deterministic rule (do NOT blindly skip them); skip docs
+3. Wait for scan completion (poll `olympix sessions --agent`). BugPocer's terminal status is **`InitialScanCompleted`** — it never shows `Completed` (`Completed`/`Failed` apply only to the `unit_tests`/`mutation_tests` arrays)
 4. Retrieve findings via `connect-bp-session`
 5. Save findings to `olympix-results/bugpocer_pocs/`
 
@@ -112,10 +125,10 @@ Present a summary table to the user:
 
 | Tool | Session ID | Results | Status |
 |------|-----------|---------|--------|
-| Static Analysis | — | {X} critical, {Y} high, {Z} medium, ... | Complete |
+| Static Analysis | — | {X} high, {Y} medium, {Z} low | Complete |
 | Mutation Tests | {id} | {score}% kill score ({killed}/{total}) | Complete |
 | Unit Tests | {id} | {coverage}% coverage, {passed} tests | Complete |
-| BugPocer | {id} | {N} findings ({H} high, {M} medium, ...) | Complete |
+| BugPocer | {id or —} | {N} findings ({H} high, {M} medium, ...) | InitialScanCompleted / Skipped |
 | Fuzz Tests | {id} | — | Started (check email) |
 ```
 
@@ -129,12 +142,12 @@ Tell the user:
 | Step | Tool | Command / Action | Mode |
 |------|------|-----------------|------|
 | 0 | Auth | Run `auth` skill (once) | — |
-| 1 | Build | Follow `skills/_shared/forge-setup.md` (once) | HARD STOP if unfixable |
+| 1 | Build | Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` (once) | HARD STOP if unfixable |
 | 2 | Static Analysis | `olympix analyze -w . --agent` | Synchronous |
 | 3 | Mutation Tests | `olympix generate-mutation-tests -w . -p ... --agent` | Async — record session_id |
-| 4 | Unit Tests | `olympix generate-unit-tests -w . -p ... -ca --agent` | Async — record session_id |
+| 4 | Unit Tests | `printf '{"action":"new_session"}\n{"action":"disconnect"}\n' \| olympix generate-unit-tests -w . -p ... --agent` | Async — record session_id |
 | 5 | Wait + retrieve | Poll `olympix sessions --agent`, then `mutation-testing` / `unit-testing` | — |
-| 6 | BugPocer | `bug-pocer` skill workflow | Async — poll for scan |
+| 6 | BugPocer | AskUserQuestion opt-in (cost), then `bug-pocer` skill workflow | Async — poll until `InitialScanCompleted` |
 | 7 | Fuzz Tests (opt.) | `olympix generate-fuzz-tests -w . -p ...` | NO `--agent`, email only |
 | 8 | Summary | Present table + next steps | — |
 
@@ -145,3 +158,10 @@ Tell the user:
 - **Don't stop on partial failure** — if one tool fails, note it and continue with the others.
 - **Wait for results** — do not mark mutation/unit test steps as done until results are actually retrieved.
 - **Fuzz tests are email-only** — they do NOT support `--agent`; results never come back programmatically.
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `--agent` flag rejected | CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe |
+| One tool fails mid-run | Note the failure and continue with the remaining tools — do not abort |

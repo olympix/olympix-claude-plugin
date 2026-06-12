@@ -7,24 +7,11 @@
 #   - claude --plugin-dir <this plugin>              → loads ONLY this plugin, session-scoped
 #   - a copied fixture Foundry repo                  → deterministic scope, hermetic build
 #
-# This isolates the SKILLS + plugin. To also isolate the BACKEND (so scans don't
-# hit dev/prod), point the olympix CLI at a per-branch backend first via the
-# internal `new-dotnet-branch` skill, then run this with that env exported.
+# This isolates the SKILLS + plugin. To also isolate the BACKEND, set the
+# relevant OLYMPIX env vars to point at a different backend if needed, and
+# export them before running this script.
 #
-# Usage:
-#   scripts/run-skill-isolated.sh [-c CONFIG_DIR] [-w WORKSPACE] [-f FIXTURE] [--keep] [-- <extra claude args>]
-#
-#   -c CONFIG_DIR   sandbox CLAUDE_CONFIG_DIR (default: a fresh mktemp dir)
-#   -w WORKSPACE    workspace to run in (default: a fresh copy of the fixture)
-#   -f FIXTURE      fixture repo to copy when -w is not given (default: fixtures/vuln-foundry)
-#   --keep          do not delete the sandbox on exit (for inspection)
-#   --no-build      skip the `forge build` sanity check
-#   -- ARGS...      everything after -- is passed verbatim to `claude`
-#
-# Examples:
-#   scripts/run-skill-isolated.sh                       # interactive, fresh sandbox
-#   scripts/run-skill-isolated.sh -- -p "/bug-pocer"    # headless: drive the bug-pocer skill
-#   scripts/run-skill-isolated.sh --keep -c /tmp/opix-sbx
+# Run with -h/--help for usage.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -38,16 +25,54 @@ FIXTURE="$PLUGIN_DIR/fixtures/vuln-foundry"
 KEEP=0
 DO_BUILD=1
 CLAUDE_ARGS=()
+CREATED_CONFIG=0
+CREATED_WORKSPACE=0
+
+usage() {
+    cat <<'USAGE'
+Olympix Claude Plugin — Isolated Skill Test Harness
+
+Runs the plugin's skills against a throwaway Foundry repo using a sandboxed
+Claude Code config, so NOTHING touches your live ~/.claude setup:
+  - CLAUDE_CONFIG_DIR points at a fresh temp dir   → no live settings/hooks/CLAUDE.md
+  - claude --plugin-dir <this plugin>              → loads ONLY this plugin, session-scoped
+  - a copied fixture Foundry repo                  → deterministic scope, hermetic build
+
+This isolates the SKILLS + plugin. To also isolate the BACKEND, set the
+relevant OLYMPIX env vars to point at a different backend if needed.
+
+Usage:
+  scripts/run-skill-isolated.sh [-c CONFIG_DIR] [-w WORKSPACE] [-f FIXTURE] [--keep] [-- <extra claude args>]
+
+  -c CONFIG_DIR   sandbox CLAUDE_CONFIG_DIR (default: a fresh mktemp dir)
+  -w WORKSPACE    workspace to run in (default: a fresh copy of the fixture)
+  -f FIXTURE      fixture repo to copy when -w is not given (default: fixtures/vuln-foundry)
+  --keep          do not delete the sandbox on exit (for inspection)
+  --no-build      skip the `forge build` sanity check
+  -- ARGS...      everything after -- is passed verbatim to `claude`
+
+Only directories CREATED by this script are deleted on exit; paths you pass
+via -c/-w are never removed.
+
+Examples:
+  scripts/run-skill-isolated.sh                       # interactive, fresh sandbox
+  scripts/run-skill-isolated.sh -- -p "/bug-pocer"    # headless: drive the bug-pocer skill
+  scripts/run-skill-isolated.sh --keep -c /tmp/opix-sbx
+USAGE
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -c) CONFIG_DIR="$2"; shift 2 ;;
-        -w) WORKSPACE="$2"; shift 2 ;;
-        -f) FIXTURE="$2"; shift 2 ;;
+        -c) [[ $# -ge 2 ]] || { echo -e "${RED}Missing value for $1${NC}"; exit 1; }
+            CONFIG_DIR="$2"; shift 2 ;;
+        -w) [[ $# -ge 2 ]] || { echo -e "${RED}Missing value for $1${NC}"; exit 1; }
+            WORKSPACE="$2"; shift 2 ;;
+        -f) [[ $# -ge 2 ]] || { echo -e "${RED}Missing value for $1${NC}"; exit 1; }
+            FIXTURE="$2"; shift 2 ;;
         --keep) KEEP=1; shift ;;
         --no-build) DO_BUILD=0; shift ;;
         --) shift; CLAUDE_ARGS=("$@"); break ;;
-        -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+        -h|--help) usage; exit 0 ;;
         *) echo -e "${RED}Unknown arg: $1${NC}"; exit 1 ;;
     esac
 done
@@ -57,9 +82,24 @@ command -v claude >/dev/null || { echo -e "${RED}ERROR${NC} — 'claude' CLI not
 command -v olympix >/dev/null || echo -e "${YELLOW}WARN${NC} — 'olympix' CLI not found; skills needing it will fail."
 command -v forge   >/dev/null || { echo -e "${RED}ERROR${NC} — 'forge' not found; install Foundry."; exit 1; }
 
+cleanup() {
+    # Only ever delete directories this script created itself (mktemp branches).
+    # User-supplied -c/-w paths are NEVER removed.
+    if [[ "$KEEP" -eq 1 ]]; then
+        echo -e "${YELLOW}Sandbox kept:${NC} config=$CONFIG_DIR workspace=$WORKSPACE"
+    else
+        [[ "$CREATED_CONFIG" -eq 1 ]] && rm -rf "$CONFIG_DIR" 2>/dev/null || true
+        [[ "$CREATED_WORKSPACE" -eq 1 ]] && rm -rf "$WORKSPACE" 2>/dev/null || true
+    fi
+}
+# Installed BEFORE the first mktemp so early failures don't leak temp dirs
+# (CREATED_* flags default 0, so cleanup is a no-op until dirs are created).
+trap cleanup EXIT
+
 # ─── Sandbox config dir (isolates from ~/.claude) ───
 if [[ -z "$CONFIG_DIR" ]]; then
     CONFIG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/olympix-skill-config.XXXXXX")"
+    CREATED_CONFIG=1
 fi
 mkdir -p "$CONFIG_DIR"
 
@@ -68,16 +108,8 @@ if [[ -z "$WORKSPACE" ]]; then
     [[ -d "$FIXTURE" ]] || { echo -e "${RED}ERROR${NC} — fixture not found: $FIXTURE"; exit 1; }
     WORKSPACE="$(mktemp -d "${TMPDIR:-/tmp}/olympix-skill-workspace.XXXXXX")"
     cp -R "$FIXTURE/." "$WORKSPACE/"
+    CREATED_WORKSPACE=1
 fi
-
-cleanup() {
-    if [[ "$KEEP" -eq 1 ]]; then
-        echo -e "${YELLOW}Sandbox kept:${NC} config=$CONFIG_DIR workspace=$WORKSPACE"
-    else
-        rm -rf "$CONFIG_DIR" "$WORKSPACE" 2>/dev/null || true
-    fi
-}
-trap cleanup EXIT
 
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  Olympix Plugin — Isolated Skill Test${NC}"
@@ -105,5 +137,5 @@ echo ""
 # Not exec'd: we want the cleanup trap to fire after the session ends so the
 # sandbox is removed (unless --keep). claude still inherits the TTY for interactive use.
 cd "$WORKSPACE"
-CLAUDE_CONFIG_DIR="$CONFIG_DIR" claude --plugin-dir "$PLUGIN_DIR" "${CLAUDE_ARGS[@]}"
+CLAUDE_CONFIG_DIR="$CONFIG_DIR" claude --plugin-dir "$PLUGIN_DIR" ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}
 exit $?

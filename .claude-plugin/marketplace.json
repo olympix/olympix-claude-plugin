@@ -1,0 +1,16 @@
+{
+  "name": "olympix",
+  "description": "Olympix smart contract security tools for Claude Code",
+  "owner": {
+    "name": "Olympix",
+    "email": "engineering@olympix.ai"
+  },
+  "plugins": [
+    {
+      "name": "olympix",
+      "source": "./",
+      "description": "Run Olympix smart contract security tools from Claude Code — static analysis, mutation tests, fuzz tests, unit tests, and BugPocer exploit generation",
+      "category": "development"
+    }
+  ]
+}
