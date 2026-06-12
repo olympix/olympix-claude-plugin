@@ -136,7 +136,19 @@ Send `confirm_all` to include everything, or `select_scope` with exclusions:
 {"action":"select_scope","data":{"exclude_contracts":["ContractA"]}}
 ```
 
-#### 3c. Validation Items
+#### 3c. Build Check (conditional)
+If the server's build check failed for the uploaded repo, this arrives BEFORE validation items:
+```json
+{"event":"build_check_failed","data":{"session_id":"<uuid>","build_command":"forge build","error_excerpt":"..."},"actions":["continue","kill_session","disconnect"]}
+```
+
+A failing build degrades scan quality and PoC generation. If the failure looks fixable (missing
+remappings, stale lockfile), prefer `kill_session`, fix the build locally, and start a new session.
+Send `continue` only when the user wants to proceed anyway. `kill_session` is acknowledged by a
+`session_killed` event, after which the CLI exits. This event does not appear when the build check
+passed.
+
+#### 3d. Validation Items
 After scope confirmation, a `progress` event announces the session ID, then validation items arrive one at a time:
 ```json
 {"event":"validation_item","data":{"key":"...","name":"...","confidence":70,"content":"...","current":1,"total":11},"actions":["confirm_item","reject_item","select_option","disconnect"]}
@@ -144,7 +156,7 @@ After scope confirmation, a `progress` event announces the session ID, then vali
 
 For each item, send `confirm_item` to accept or `reject_item` to reject.
 
-#### 3d. Security Questions
+#### 3e. Security Questions
 
 **Do NOT blindly skip these.** They calibrate the scan. Answer each from the repo you already
 read (contracts, roles, external integrations, upgradeability, economic assumptions).
@@ -164,7 +176,7 @@ non-empty causes the CLI to emit one or more follow-up `security_question` event
 `parent_question_id`) BEFORE the next top-level question. Answer them the same way — same actions.
 Do not treat a follow-up as the next top-level question; `current`/`total` reset to the follow-up batch.
 
-#### 3e. Additional Documentation
+#### 3f. Additional Documentation
 ```json
 {"event":"additional_docs_prompt","actions":["submit_docs","skip_docs","disconnect"]}
 ```
@@ -174,7 +186,7 @@ Send `skip_docs` or `submit_docs` with notes/links:
 {"action":"submit_docs","data":{"notes":"Token uses rebasing","links":["https://docs.example.com"]}}
 ```
 
-#### 3f. Submission
+#### 3g. Submission
 ```json
 {"event":"validation_submitted","data":{"session_id":"<uuid>"}}
 ```
