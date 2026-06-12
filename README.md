@@ -21,6 +21,31 @@ This repo is a self-hosting Claude Code plugin marketplace. Inside Claude Code, 
 
 Then restart Claude Code. That's it — no clone or setup script needed.
 
+> The `olympix/olympix-claude-plugin` shorthand only resolves once the repo is **public**. While it is private, use one of the options below.
+
+### Private / pre-release sharing
+
+The repo self-hosts its `.claude-plugin/marketplace.json`, so you don't need it to be public — you only need the code on the machine, or git access to it.
+
+**If you have GitHub access to the private repo** — use the full git URL so your credentials apply:
+
+```
+/plugin marketplace add git@github.com:olympix/olympix-claude-plugin.git
+/plugin install olympix@olympix
+```
+
+**If you were sent a clone or zip** (no GitHub access needed) — point the marketplace at the local folder:
+
+```bash
+git clone <repo-url>          # or unzip what you were sent
+```
+```
+/plugin marketplace add /absolute/path/to/olympix-claude-plugin
+/plugin install olympix@olympix
+```
+
+Restart Claude Code. Both paths end at the same `olympix@olympix` enable key.
+
 ### Fallback: setup script (local clone)
 
 If you can't use the marketplace flow (e.g. air-gapped or developing the plugin itself):
