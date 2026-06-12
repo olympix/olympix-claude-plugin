@@ -3,3 +3,13 @@
 
 # OS files
 .DS_Store
+
+# Local Claude Code settings (personal paths, local overrides)
+.claude/
+
+# Local Olympix agent-mode session cache
+.opix/
+
+# Foundry build output (fixtures)
+fixtures/**/out/
+fixtures/**/cache/

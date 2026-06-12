@@ -1,23 +1,37 @@
 ---
 name: unit-test
 description: >
-  Scaffolds Olympix unit test templates for a Foundry-based Solidity repo.
-  Verifies forge coverage compatibility, creates OlympixUnitTest base contract and
-  test files for the top 10 most critical contracts, adds setup functions, then
-  runs olympix generate-unit-tests.
+  Use when the user wants Olympix unit test generation prepared and run for a
+  Foundry-based Solidity repo — verifies forge coverage compatibility, scaffolds the
+  OlympixUnitTest base contract and test files for the top 10 most critical contracts,
+  adds setup functions, dispatches olympix generate-unit-tests via agent mode, then
+  waits for results and retrieves coverage data.
   TRIGGER: "scaffold tests", "unit test", "generate unit tests", "opix tests", "test generation setup", "unit-test"
-tools: Read, Glob, Grep, Bash, Agent
+allowed-tools: Read, Glob, Grep, Bash, Write, Edit, Skill, AskUserQuestion
 ---
 
 # Unit Test Generation
 
-Prepare a Foundry-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator.
+Prepare a Foundry-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator via agent mode.
 
 ## Prerequisites
 
 - Foundry (`forge`) installed
 - `olympix` CLI installed and authenticated
 - Working directory is the root of a Foundry project
+
+## CLI Capability Check
+
+This skill requires agent mode (`--agent`); older Olympix CLIs do not support it. Probe first:
+
+```bash
+if ! command -v olympix >/dev/null 2>&1 && [ ! -x "$HOME/.opix/bin/olympix" ]; then echo NOT_INSTALLED;
+elif olympix generate-unit-tests --help 2>&1 | grep -q -- --agent; then echo AGENT_MODE; else echo LEGACY_CLI; fi
+```
+
+If `NOT_INSTALLED`, **HARD STOP** — tell the user to install the Olympix CLI from https://olympix.github.io/installation/ and rerun this skill.
+
+If `LEGACY_CLI` (the `--agent` flag is rejected), the CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if the CLI still lacks `--agent`.
 
 ## Process
 
@@ -33,9 +47,9 @@ forge coverage --ir-minimum --allow-failure
 
 **If it succeeds:** proceed to Step 2.
 
-**If it fails with build/dependency errors:** read and follow `skills/_shared/forge-setup.md`, then retry.
+**If it fails with build/dependency errors:** read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`, then retry.
 
-**If it fails with "stack too deep":** read `skills/_shared/troubleshooting.md` for the stack-too-deep triage process. Determine if the problem is localized or repo-wide.
+**If it fails with "stack too deep":** read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/troubleshooting.md` for the stack-too-deep triage process. Determine if the problem is localized or repo-wide.
 
 > **HARD STOP (repo-wide stack-too-deep):**
 > Do NOT proceed. Do NOT create test files. Do NOT run the generator. Tell the user the repo is incompatible with unit test generation.
@@ -72,7 +86,7 @@ abstract contract OlympixUnitTest is Test {
 
 ### Step 4: Identify Top 10 Most Critical Contracts
 
-Read `skills/_shared/contract-selection.md` for the full criteria.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md` for the full criteria.
 
 Additional rules for unit tests:
 - **Exclude contracts that transitively import a stack-too-deep offender** (identified in Step 1)
@@ -239,10 +253,148 @@ forge coverage --ir-minimum --allow-failure
 
 If it fails after adding setUp functions, simplify the setUp that caused the failure.
 
-### Step 10: Run Olympix Unit Test Generator
+### Step 10: List Available Contracts (Optional Verification)
+
+Before dispatching, verify the CLI sees the contracts:
 
 ```bash
-olympix generate-unit-tests -ca
+olympix generate-unit-tests -w . --list --agent
 ```
 
-Report the output to the user. Results arrive via email — ask the user to check their inbox.
+Output: `{"event":"list_contracts","data":{"contracts":[{"index":1,"name":"...","path":"..."}]}}`
+
+Verify the contracts you scaffolded appear in the list. The file is also saved to `.opix/agent/unit-tests/contracts.json`.
+
+### Step 11: Name the Session
+
+Name the session so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
+
+```bash
+org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
+```
+
+**Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}`.
+
+### Step 12: Dispatch Unit Test Generation
+
+Pass the confirmed session name in `data.title`:
+
+```bash
+printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \
+  | olympix generate-unit-tests -w . -p src/Contract1.sol --agent
+```
+
+**Do NOT send `confirm_all` here** — it is not a valid action after dispatch. Sending it triggers an `error` event that skips the disconnect acknowledgment and the EOF safety delay, which can kill the just-dispatched job. The correct sequence is exactly `new_session` then `disconnect` (same as mutation tests).
+
+**Expected JSONL output:**
+```
+{"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","disconnect"]}
+{"event":"results_ready","data":{"type":"unit_test","session_id":"<uuid>","message":"unit test generation started. Check email for results."},"actions":["disconnect"]}
+```
+
+Record the **session_id**.
+
+**Options:**
+- `--agent` — agent mode, JSONL stdin/stdout (required for this skill)
+- `-w .` — workspace directory (paths resolve relative to this)
+- `-p <path>` — suppresses the interactive `file_selection` prompt (repeat per contract)
+- `-ca` — do NOT bother: it is a **no-op in agent mode** (it only affects the interactive TUI confirmation flow)
+
+**Rules:**
+- In agent mode, `-p` does **NOT** filter which contracts get tests — generation always covers **every scaffold that inherits `OlympixUnitTest`**. Its real effect is suppressing the `file_selection` prompt so the dispatch runs unattended. Still pass your scaffold paths for clarity.
+- Scaffold at most 10 test files (Step 4) — that is what bounds the run, not `-p`
+
+**If the dispatch errors or no `results_ready` arrives:** re-check authentication (run the `auth` skill) and that each `-p` path exists, then retry.
+
+### Step 13: Wait for Completion
+
+Poll the session status periodically (every ~90 seconds) until `Completed` or `Failed`:
+
+```bash
+olympix sessions --agent
+```
+
+Look for the session ID in the `unit_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
+
+**If status is `Failed`:** stop polling and go to Step 14 to read the `error_message`.
+
+### Step 14: Retrieve Results
+
+When status is `Completed`, reconnect:
+
+```bash
+printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"disconnect"}\n' \
+  | olympix unit-testing --agent
+```
+
+**Expected output includes:**
+```
+{"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","disconnect"]}
+{"event":"unit_test_results","data":{"session_id":"<id>","total_files":1,"successful_files":1,"branches_coverage":74.4,"test_files":[{"subject_contract":"...","subject_path":"...","test_contract":"...","test_path":"...","has_new_tests":true,"coverage_before":71.8,"coverage_after":74.4,"passed":13,"failed":0}]}}
+```
+
+Results also auto-persist to `.opix/agent/unit-tests/results.json`. Note: at dispatch time this file contains only the dispatch receipt; the full results are written to it at this retrieval step.
+
+**If status is `Failed`:** The session includes an `error_message` field.
+
+### Step 15: Save Results and Report
+
+Parse results and save to `olympix-results/unit_test/unit_test_results.md`:
+
+```markdown
+# Unit Test Results
+
+**Session ID:** {id}
+**Total Files:** {total_files} | **Successful:** {successful_files}
+**Branches Coverage:** {branches_coverage}%
+
+## Per-File Results
+
+| Contract | Test File | Coverage Before | Coverage After | Passed | Failed |
+|----------|-----------|----------------|----------------|--------|--------|
+| ... | ... | ...% | ...% | ... | ... |
+```
+
+Tell the user:
+- Coverage improvements per contract
+- Total tests generated and pass rate
+- Results saved in `olympix-results/unit_test/unit_test_results.md`
+
+## Quick Reference
+
+| Step | Command / Action | Gate |
+|------|-----------------|------|
+| 0 | Run `auth` skill | Must be authenticated |
+| 1 | `forge coverage --ir-minimum --allow-failure` | HARD STOP on repo-wide stack-too-deep |
+| 2 | Detect `{TEST_DIR}` and `{SOLC_PRAGMA}` | — |
+| 3 | Create `{TEST_DIR}/OpixUnitTests.sol` | — |
+| 4 | Identify top 10 concrete contracts | Concrete contracts only |
+| 5 | Create `Opix{Contract}Test.t.sol` templates | Exact inheritance pattern |
+| 6 | `forge coverage --ir-minimum --allow-failure` | Must compile |
+| 7 | Add `setUp()` functions | — |
+| 8 | Add 2-4 `test_example_` functions | All must pass |
+| 9 | `forge coverage --ir-minimum --allow-failure` | Must compile |
+| 10 | `olympix generate-unit-tests -w . --list --agent` | Contracts appear in list |
+| 11 | Suggest a session name; ask the user to confirm/change it | Record `{SESSION_TITLE}` |
+| 12 | `printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \| olympix generate-unit-tests -w . -p ... --agent` | Record session_id |
+| 13 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
+| 14 | `olympix unit-testing --agent` (connect_session) | Retrieve results |
+| 15 | Save results + report to user | — |
+
+## Important Notes
+
+- **Session naming:** Always name the session and ask the user to confirm or change it, suggesting a sensible default (repo identity `<org>/<repo>@<short-sha>` from git, falling back to the repo folder name). Pass the confirmed name in the `new_session` action's `data.title`. Older CLIs ignore the title and keep the default name (`<org>/<repo>@<short-sha>` or a timestamp) — if naming has no effect, suggest `olympix update`.
+- **Never state or imply an expected scan duration**, and never call a long scan abnormal (e.g. "running longer than typical (~17 min)"). Report phase/state only — "still running", "scanning", "done", "failed". The `~90 second` poll cadence is an internal mechanic; do not present it to the user as an ETA.
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `--agent` flag rejected | CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe |
+| Repo-wide stack-too-deep under coverage | HARD STOP — do not create files or dispatch |
+| `Contract 'X' not found` | Abstract/library scaffolded — use a concrete inheritor or mock |
+| Zero tests generated | Scaffold had no `test_example_` functions — add 2-4 and re-dispatch |
+| Example tests fail | Fix setUp/mocks until `forge test --match-test 'test_example_'` passes |
+| Session status `Failed` | Read `error_message` from the results event |

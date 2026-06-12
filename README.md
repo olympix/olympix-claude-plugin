@@ -1,61 +1,77 @@
 # Olympix Claude Plugin
 
-Olympix is a smart contract security analysis platform that runs static analysis with 100+ vulnerability detectors, generates mutation tests, fuzz tests, and unit tests, and produces proof-of-concept exploits via BugPocer. This plugin lets you run all Olympix tools directly from Claude Code.
+Olympix is a smart contract security analysis platform that runs static analysis with 100+ vulnerability detectors, generates mutation tests, fuzz tests, and unit tests, and produces proof-of-concept exploits via BugPocer. This plugin lets you run all Olympix tools directly from Claude Code using agent mode for fully automated JSONL interaction.
 
 ## Prerequisites
 
-- **Olympix CLI** -- verify with `olympix --version`. Install from [docs.olympix.ai/cli](https://docs.olympix.ai/cli)
+- **Olympix CLI** -- verify with `olympix version`. Install from [olympix.github.io/installation](https://olympix.github.io/installation/)
 - **Foundry/Forge** -- verify with `forge --version`. Install from [getfoundry.sh](https://getfoundry.sh)
 - **Claude Code** -- the AI coding assistant this plugin extends
 
 ## Installation
 
-### Quick start
+### Recommended: install from GitHub
+
+This repo is a self-hosting Claude Code plugin marketplace. Inside Claude Code, run:
+
+```
+/plugin marketplace add olympix/olympix-claude-plugin
+/plugin install olympix@olympix
+```
+
+Then restart Claude Code. That's it — no clone or setup script needed.
+
+> The `olympix/olympix-claude-plugin` shorthand only resolves once the repo is **public**. While it is private, use one of the options below.
+
+### Private / pre-release sharing
+
+The repo self-hosts its `.claude-plugin/marketplace.json`, so you don't need it to be public — you only need the code on the machine, or git access to it.
+
+**If you have GitHub access to the private repo** — use the full git URL so your credentials apply:
+
+```
+/plugin marketplace add git@github.com:olympix/olympix-claude-plugin.git
+/plugin install olympix@olympix
+```
+
+**If you were sent a clone or zip** (no GitHub access needed) — point the marketplace at the local folder:
+
+```bash
+git clone <repo-url>          # or unzip what you were sent
+```
+```
+/plugin marketplace add /absolute/path/to/olympix-claude-plugin
+/plugin install olympix@olympix
+```
+
+Restart Claude Code. Both paths end at the same `olympix@olympix` enable key.
+
+### Fallback: setup script (local clone)
+
+If you can't use the marketplace flow (e.g. air-gapped or developing the plugin itself):
 
 ```bash
 git clone https://github.com/olympix/olympix-claude-plugin.git
-cd olympix-claude-plugin
-scripts/setup.sh
+olympix-claude-plugin/scripts/setup.sh
 ```
 
-The setup script checks prerequisites, creates a marketplace wrapper, registers the plugin with Claude Code, and adds CLI permissions. Restart Claude Code after running it.
+The setup script checks prerequisites, creates a local marketplace wrapper, registers the plugin with Claude Code, and adds CLI permissions. Restart Claude Code after running it.
+
+It offers two scopes:
+
+- **Global** — registers the plugin for all projects (`~/.claude/settings.json`). Run it from anywhere.
+- **Workspace** — registers the plugin only for the current directory (writes `$PWD/.claude/settings.local.json`). **Run the script from the target project directory** (e.g. `cd ~/my-foundry-project && /path/to/olympix-claude-plugin/scripts/setup.sh`), not from the plugin checkout.
 
 ### Manual install
 
 1. Clone this repo
-2. Create a marketplace wrapper (sibling directory):
-   ```bash
-   PLUGIN_DIR="$(pwd)/olympix-claude-plugin"
-   MARKETPLACE_DIR="$(pwd)/olympix-plugin-marketplace"
-
-   mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
-   ln -s "$PLUGIN_DIR" "$MARKETPLACE_DIR/olympix-claude-plugin"
-
-   cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << 'EOF'
-   {
-     "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-     "name": "olympix",
-     "description": "Olympix smart contract security tools for Claude Code",
-     "owner": { "name": "Olympix", "email": "engineering@olympix.ai" },
-     "plugins": [
-       {
-         "name": "olympix-claude-plugin",
-         "description": "Run Olympix security tools from Claude Code",
-         "source": "./olympix-claude-plugin",
-         "category": "development"
-       }
-     ]
-   }
-   EOF
-   ```
-
-3. Add to your Claude Code settings (`~/.claude/settings.json`):
+2. Add to your Claude Code settings (`~/.claude/settings.json`), pointing the marketplace at your clone (it ships its own `.claude-plugin/marketplace.json`):
    ```json
    {
-     "enabledPlugins": { "olympix-claude-plugin@olympix": true },
+     "enabledPlugins": { "olympix@olympix": true },
      "extraKnownMarketplaces": {
        "olympix": {
-         "source": { "source": "directory", "path": "/absolute/path/to/olympix-plugin-marketplace" }
+         "source": { "source": "directory", "path": "/absolute/path/to/olympix-claude-plugin" }
        }
      },
      "permissions": {
@@ -64,7 +80,7 @@ The setup script checks prerequisites, creates a marketplace wrapper, registers 
    }
    ```
 
-4. Restart Claude Code.
+3. Restart Claude Code.
 
 ## Usage
 
@@ -79,10 +95,11 @@ This will:
 2. Run `forge build` to verify the project compiles
 3. Run static analysis and save findings
 4. Generate mutation tests for the top 10 most critical contracts
-5. Generate fuzz tests for the top 3 most critical contracts
-6. Generate unit tests with coverage scaffolding
-7. Prompt for BugPocer interactive session
-8. Assemble all results into `olympix-results/report.md`
+5. Generate unit tests with coverage scaffolding
+6. Run BugPocer security analysis (fully automated)
+7. Optionally generate fuzz tests for the top 3 most critical contracts
+8. Wait for async results and download them directly
+9. Assemble all results into `olympix-results/report.md`
 
 ## Available skills
 
@@ -93,22 +110,26 @@ This will:
 | `olympix:mutation-test` | Generate mutation tests for top 10 contracts |
 | `olympix:fuzz-test` | Generate fuzz tests for top 3 contracts |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
-| `olympix:bug-pocer` | Launch BugPocer interactive security analysis |
+| `olympix:bug-pocer` | Run BugPocer security analysis (fully automated) |
 | `olympix:assemble-report` | Collect results into `olympix-results/report.md` |
 | `olympix:auth` | Check/refresh CLI authentication |
 
 ## How results work
 
 - **Static analysis** runs synchronously — results are immediate.
-- **Mutation tests, fuzz tests, and unit tests** are async — results arrive via email. Check your inbox for session results and use `/olympix:assemble-report` to compile the final report.
-- **BugPocer** is interactive — run `! olympix bug-pocer` for the TUI session.
+- **Mutation tests and unit tests** dispatch async jobs. Results are downloaded directly via agent mode when complete — no need to check email.
+- **BugPocer** runs fully automated via agent mode — scope review, validation, questions, scan, and findings retrieval all happen programmatically.
+- **Fuzz tests** are the only tool that does NOT support agent mode. Results arrive via email.
+
+All results auto-persist to `.opix/agent/` inside the workspace directory.
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| `olympix` not found | Install CLI: https://docs.olympix.ai/cli |
+| `olympix` not found | Install CLI: https://olympix.github.io/installation/ |
 | Auth expired | Run `olympix:auth` or `! olympix login -e your@email.com` |
 | `forge build` fails | Install dependencies per project README |
 | Stack-too-deep | Some contracts incompatible with unit test coverage mode |
-| No email results | Check spam; async tools send results via email |
+| Fuzz `--agent` error | Agent mode not supported for fuzz tests — run without `--agent` |
+| `--agent` flag rejected / unknown option | Olympix CLI too old — run `olympix update` |

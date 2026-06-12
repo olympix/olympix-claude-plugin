@@ -57,9 +57,13 @@ fi
 echo "  Where should the plugin be registered?"
 echo ""
 echo "    1. Global    — all projects (~/.claude/settings.json)"
-echo "    2. Workspace — this workspace only (.claude/settings.local.json)"
+echo "    2. Workspace — current directory only (\$PWD/.claude/settings.local.json)"
+echo "       NOTE: for workspace scope, run this script FROM the target project"
+echo "       directory (e.g. \`/path/to/plugin/scripts/setup.sh\`), not from the"
+echo "       plugin checkout — settings are written to the directory you run it in."
 echo ""
-read -p "  Choice [1]: " INSTALL_SCOPE
+INSTALL_SCOPE=""
+read -p "  Choice [1]: " INSTALL_SCOPE || INSTALL_SCOPE=1
 case ${INSTALL_SCOPE:-1} in
     1) INSTALL_MODE="global" ;;
     2) INSTALL_MODE="workspace" ;;
@@ -88,7 +92,7 @@ cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << MKJSON
   "owner": { "name": "Olympix", "email": "engineering@olympix.ai" },
   "plugins": [
     {
-      "name": "olympix-claude-plugin",
+      "name": "olympix",
       "description": "Run Olympix security tools from Claude Code",
       "source": "./olympix-claude-plugin",
       "category": "development"
@@ -108,7 +112,7 @@ fi
 if command -v jq &>/dev/null; then
     tmp_file=$(mktemp)
     jq --arg mp_path "$MARKETPLACE_DIR" '
-      .enabledPlugins["olympix-claude-plugin@olympix"] = true |
+      .enabledPlugins["olympix@olympix"] = true |
       .extraKnownMarketplaces.olympix = {
         "source": { "source": "directory", "path": $mp_path }
       }
@@ -116,10 +120,19 @@ if command -v jq &>/dev/null; then
     echo -e "  ${GREEN}OK${NC} — plugin registered in $(basename "$SETTINGS_FILE")"
 else
     echo -e "  ${YELLOW}WARN${NC} — jq not installed, cannot update settings automatically"
-    echo "  Add the following to $SETTINGS_FILE:"
+    echo "  Merge the following keys into $SETTINGS_FILE"
+    echo "  (if the file is empty or missing, paste this whole block as its content):"
     echo ""
-    echo "    \"enabledPlugins\": { \"olympix-claude-plugin@olympix\": true },"
-    echo "    \"extraKnownMarketplaces\": { \"olympix\": { \"source\": { \"source\": \"directory\", \"path\": \"$MARKETPLACE_DIR\" } } }"
+    cat <<MANUALJSON
+    {
+      "enabledPlugins": { "olympix@olympix": true },
+      "extraKnownMarketplaces": {
+        "olympix": {
+          "source": { "source": "directory", "path": "$MARKETPLACE_DIR" }
+        }
+      }
+    }
+MANUALJSON
 fi
 
 echo ""
@@ -150,10 +163,16 @@ if command -v jq &>/dev/null; then
     fi
 else
     echo -e "  ${YELLOW}WARN${NC} — jq not installed, cannot update settings automatically"
-    echo "  Manually add these to $SETTINGS_FILE under permissions.allow:"
-    for perm in "${OLYMPIX_PERMISSIONS[@]}"; do
-        echo "    \"$perm\""
-    done
+    echo "  Merge the following key into $SETTINGS_FILE"
+    echo "  (if the file is empty or missing, paste this whole block as its content):"
+    echo ""
+    cat <<'MANUALJSON'
+    {
+      "permissions": {
+        "allow": ["Bash(olympix:*)", "Bash(forge:*)"]
+      }
+    }
+MANUALJSON
 fi
 
 echo ""
@@ -176,7 +195,7 @@ echo "  olympix:static-analysis   — Run vulnerability scanner"
 echo "  olympix:mutation-test     — Generate mutation tests for top 10 contracts"
 echo "  olympix:fuzz-test         — Generate fuzz tests for top 3 contracts"
 echo "  olympix:unit-test         — Generate unit tests with coverage scaffolding"
-echo "  olympix:bug-pocer         — Launch BugPocer interactive security analysis"
+echo "  olympix:bug-pocer         — Launch BugPocer security analysis"
 echo "  olympix:assemble-report   — Collect results into olympix-results/report.md"
 echo "  olympix:auth              — Check/refresh CLI authentication"
 echo ""
