@@ -23,8 +23,11 @@ Collect all Olympix tool results into a structured `olympix-results/` directory 
 Downloading results requires agent mode (`--agent`); older Olympix CLIs do not support it. Probe first:
 
 ```bash
-olympix sessions --help 2>&1 | grep -q -- --agent && echo AGENT_MODE || echo LEGACY_CLI
+if ! command -v olympix >/dev/null 2>&1 && [ ! -x "$HOME/.opix/bin/olympix" ]; then echo NOT_INSTALLED;
+elif olympix sessions --help 2>&1 | grep -q -- --agent; then echo AGENT_MODE; else echo LEGACY_CLI; fi
 ```
+
+If `NOT_INSTALLED`, **HARD STOP** — tell the user to install the Olympix CLI from https://olympix.github.io/installation/ and rerun this skill.
 
 If `LEGACY_CLI` (the `--agent` flag is rejected), the CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if the CLI still lacks `--agent`.
 

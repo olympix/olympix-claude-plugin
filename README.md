@@ -4,7 +4,7 @@ Olympix is a smart contract security analysis platform that runs static analysis
 
 ## Prerequisites
 
-- **Olympix CLI** -- verify with `olympix --version`. Install from [docs.olympix.ai/cli](https://docs.olympix.ai/cli)
+- **Olympix CLI** -- verify with `olympix version`. Install from [olympix.github.io/installation](https://olympix.github.io/installation/)
 - **Foundry/Forge** -- verify with `forge --version`. Install from [getfoundry.sh](https://getfoundry.sh)
 - **Claude Code** -- the AI coding assistant this plugin extends
 
@@ -102,7 +102,7 @@ All results auto-persist to `.opix/agent/` inside the workspace directory.
 
 | Problem | Solution |
 |---------|----------|
-| `olympix` not found | Install CLI: https://docs.olympix.ai/cli |
+| `olympix` not found | Install CLI: https://olympix.github.io/installation/ |
 | Auth expired | Run `olympix:auth` or `! olympix login -e your@email.com` |
 | `forge build` fails | Install dependencies per project README |
 | Stack-too-deep | Some contracts incompatible with unit test coverage mode |

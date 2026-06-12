@@ -14,6 +14,14 @@ Check if the Olympix CLI is authenticated. If not, instruct the user to login.
 
 ## Process
 
+### Step 0: Check CLI Installed
+
+```bash
+if command -v olympix >/dev/null 2>&1 || [ -x "$HOME/.opix/bin/olympix" ]; then echo INSTALLED; else echo NOT_INSTALLED; fi
+```
+
+If `NOT_INSTALLED`, **HARD STOP** — tell the user to install the Olympix CLI from https://olympix.github.io/installation/ and rerun. Do not interpret a missing config as "not logged in" when the CLI itself is absent.
+
 ### Step 1: Check Current Auth
 
 ```bash

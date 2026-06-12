@@ -25,7 +25,7 @@ context="Olympix Claude Plugin active."$'\n'
 if command -v olympix &>/dev/null || [ -x "$HOME/.opix/bin/olympix" ]; then
     context+="  CLI: installed"$'\n'
 else
-    context+="  CLI: MISSING — install from https://docs.olympix.ai/cli"$'\n'
+    context+="  CLI: MISSING — install from https://olympix.github.io/installation/"$'\n'
 fi
 
 # Check authentication

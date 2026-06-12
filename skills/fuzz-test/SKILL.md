@@ -72,6 +72,7 @@ Report the session ID and output to the user. Results arrive via email — ask t
 | Problem | Solution |
 |---------|----------|
 | `forge build` fails | Install deps per README; HARD STOP if unfixable |
+| `olympix` not found | CLI not installed — HARD STOP, install from https://olympix.github.io/installation/ |
 | `--agent` error about unsupported mode | Remove `--agent` — fuzz tests run in standard mode only |
 | Contract path wrong | Verify the path exists with `ls`; use relative path from repo root |
 | `op`/auth fails | Re-run the `auth` skill, then retry the command |
