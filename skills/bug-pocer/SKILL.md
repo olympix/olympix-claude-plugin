@@ -6,7 +6,7 @@ description: >
   (incl. follow-ups), scan, findings retrieval with verdicts, Q&A, and built-in
   PDF + PoC export, all driven programmatically.
   TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer"
-allowed-tools: Read, Glob, Grep, Bash, Write, Skill
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
 # BugPocer Security Analysis
@@ -101,6 +101,16 @@ rm -f .opix-bp-in .opix-bp-holder.pid
 
 ### Step 3: New Session Flow
 
+Before driving the flow, **name the session** so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
+
+```bash
+org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
+```
+
+**Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}` and pass it in the `new_session` action's `data.title` below.
+
 The flow proceeds through these stages:
 
 #### 3a. Sessions List
@@ -109,7 +119,10 @@ First event is `sessions_list` showing existing sessions.
 {"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","disconnect"]}
 ```
 
-Send `new_session` to start a new session, or `connect_session` with a session ID to reconnect.
+Send `new_session` (carrying the confirmed title) to start a new session, or `connect_session` with a session ID to reconnect:
+```json
+{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}
+```
 
 #### 3b. Scope Review
 ```json
@@ -178,8 +191,9 @@ an answer. Poll session status until `InitialScanCompleted`:
 olympix sessions --agent
 ```
 
-Look for the session in `bug_pocer` array. Typical scan takes 5-15 minutes. Poll on an interval;
-keep doing other work between polls rather than blocking.
+Look for the session in `bug_pocer` array. Poll on an interval; keep doing other work between polls
+rather than blocking. Do not tell the user how long it should take or call a long scan abnormal —
+scans routinely take much longer than expected.
 
 ### Step 5: Retrieve Findings
 
@@ -297,6 +311,8 @@ Tell the user:
 
 ## Important Notes
 
+- **Session naming:** Always name the session and ask the user to confirm or change it, suggesting a sensible default (repo identity `<org>/<repo>@<short-sha>` from git, falling back to the repo folder name). Pass the confirmed name in the `new_session` action's `data.title`. Older CLIs ignore the title and keep the default name (`<org>/<repo>@<short-sha>` or a timestamp) — if naming has no effect, suggest `olympix update`.
+- **Never state or imply an expected scan duration**, and never call a long scan abnormal (e.g. "running longer than typical (~17 min)"). Report phase/state only — "still running", "scanning", "done", "failed".
 - **Cost warning:** Each new BugPocer session triggers LLM calls on the backend. Avoid creating unnecessary sessions.
 - **Cross-mode safety:** After agent-mode submission, `pending_validation_payload` is NULL in the database — no stale state for TUI mode.
 - **Reconnecting:** Use `connect-bp-session -s <id>` or `bug-pocer` → `connect_session` action to reconnect to any existing session.

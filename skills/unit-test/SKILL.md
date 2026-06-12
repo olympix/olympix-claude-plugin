@@ -7,7 +7,7 @@ description: >
   adds setup functions, dispatches olympix generate-unit-tests via agent mode, then
   waits for results and retrieves coverage data.
   TRIGGER: "scaffold tests", "unit test", "generate unit tests", "opix tests", "test generation setup", "unit-test"
-allowed-tools: Read, Glob, Grep, Bash, Write, Edit, Skill
+allowed-tools: Read, Glob, Grep, Bash, Write, Edit, Skill, AskUserQuestion
 ---
 
 # Unit Test Generation
@@ -265,10 +265,24 @@ Output: `{"event":"list_contracts","data":{"contracts":[{"index":1,"name":"...",
 
 Verify the contracts you scaffolded appear in the list. The file is also saved to `.opix/agent/unit-tests/contracts.json`.
 
-### Step 11: Dispatch Unit Test Generation
+### Step 11: Name the Session
+
+Name the session so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
 
 ```bash
-printf '{"action":"new_session"}\n{"action":"disconnect"}\n' \
+org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
+```
+
+**Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}`.
+
+### Step 12: Dispatch Unit Test Generation
+
+Pass the confirmed session name in `data.title`:
+
+```bash
+printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \
   | olympix generate-unit-tests -w . -p src/Contract1.sol --agent
 ```
 
@@ -294,7 +308,7 @@ Record the **session_id**.
 
 **If the dispatch errors or no `results_ready` arrives:** re-check authentication (run the `auth` skill) and that each `-p` path exists, then retry.
 
-### Step 12: Wait for Completion
+### Step 13: Wait for Completion
 
 Poll the session status periodically (every ~90 seconds) until `Completed` or `Failed`:
 
@@ -304,9 +318,9 @@ olympix sessions --agent
 
 Look for the session ID in the `unit_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
 
-**If status is `Failed`:** stop polling and go to Step 13 to read the `error_message`.
+**If status is `Failed`:** stop polling and go to Step 14 to read the `error_message`.
 
-### Step 13: Retrieve Results
+### Step 14: Retrieve Results
 
 When status is `Completed`, reconnect:
 
@@ -325,7 +339,7 @@ Results also auto-persist to `.opix/agent/unit-tests/results.json`. Note: at dis
 
 **If status is `Failed`:** The session includes an `error_message` field.
 
-### Step 14: Save Results and Report
+### Step 15: Save Results and Report
 
 Parse results and save to `olympix-results/unit_test/unit_test_results.md`:
 
@@ -363,10 +377,16 @@ Tell the user:
 | 8 | Add 2-4 `test_example_` functions | All must pass |
 | 9 | `forge coverage --ir-minimum --allow-failure` | Must compile |
 | 10 | `olympix generate-unit-tests -w . --list --agent` | Contracts appear in list |
-| 11 | `printf '{"action":"new_session"}\n{"action":"disconnect"}\n' \| olympix generate-unit-tests -w . -p ... --agent` | Record session_id |
-| 12 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
-| 13 | `olympix unit-testing --agent` (connect_session) | Retrieve results |
-| 14 | Save results + report to user | — |
+| 11 | Suggest a session name; ask the user to confirm/change it | Record `{SESSION_TITLE}` |
+| 12 | `printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \| olympix generate-unit-tests -w . -p ... --agent` | Record session_id |
+| 13 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
+| 14 | `olympix unit-testing --agent` (connect_session) | Retrieve results |
+| 15 | Save results + report to user | — |
+
+## Important Notes
+
+- **Session naming:** Always name the session and ask the user to confirm or change it, suggesting a sensible default (repo identity `<org>/<repo>@<short-sha>` from git, falling back to the repo folder name). Pass the confirmed name in the `new_session` action's `data.title`. Older CLIs ignore the title and keep the default name (`<org>/<repo>@<short-sha>` or a timestamp) — if naming has no effect, suggest `olympix update`.
+- **Never state or imply an expected scan duration**, and never call a long scan abnormal (e.g. "running longer than typical (~17 min)"). Report phase/state only — "still running", "scanning", "done", "failed". The `~90 second` poll cadence is an internal mechanic; do not present it to the user as an ETA.
 
 ## Common Issues
 

@@ -6,7 +6,7 @@ description: >
   most critical contracts, dispatches the job, waits for completion, and retrieves
   results with kill scores.
   TRIGGER: "mutation tests", "mutation test", "generate mutation tests", "mutant testing", "mutation-test"
-allowed-tools: Read, Glob, Grep, Bash, Write, Skill
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
 # Mutation Test Generation
@@ -52,12 +52,24 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md` for the full c
 
 Select the 10 most critical contracts. List the selected contracts with their file paths relative to the repo root before proceeding.
 
-### Step 3: Dispatch Mutation Test Job
+### Step 3: Name the Session
 
-Use agent mode with `-p` flags for each contract path. The flow goes through a `sessions_list` first, then `new_session` to dispatch:
+Name the session so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
 
 ```bash
-printf '{"action":"new_session"}\n{"action":"disconnect"}\n' \
+org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
+```
+
+**Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}`.
+
+### Step 4: Dispatch Mutation Test Job
+
+Use agent mode with `-p` flags for each contract path. The flow goes through a `sessions_list` first, then `new_session` to dispatch. Pass the confirmed session name in `data.title`:
+
+```bash
+printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \
   | olympix generate-mutation-tests -w . -p src/Contract1.sol -p src/Contract2.sol --agent
 ```
 
@@ -81,7 +93,7 @@ Record the **session_id** from the `results_ready` event.
 
 **If the dispatch errors or no `results_ready` arrives:** re-check authentication (run the `auth` skill) and that each `-p` path exists, then retry.
 
-### Step 4: Wait for Completion
+### Step 5: Wait for Completion
 
 Poll the session status periodically (every ~90 seconds) until it shows `Completed` or `Failed`:
 
@@ -91,9 +103,9 @@ olympix sessions --agent
 
 Look for the session ID in the `mutation_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
 
-**If status is `Failed`:** stop polling and go to Step 5 to read the `error_message`.
+**If status is `Failed`:** stop polling and go to Step 6 to read the `error_message`.
 
-### Step 5: Retrieve Results
+### Step 6: Retrieve Results
 
 When status is `Completed`, reconnect to download results:
 
@@ -114,7 +126,7 @@ Results also auto-persist to `.opix/agent/mutation-tests/results.json` in the wo
 
 **If status is `Failed`:** The session will include an `error_message` field explaining the failure (e.g., `forge test` compilation error).
 
-### Step 6: Save Results to olympix-results/
+### Step 7: Save Results to olympix-results/
 
 Parse the mutation test results and save to `olympix-results/mutation_test/mutation_results.md`:
 
@@ -131,7 +143,7 @@ Parse the mutation test results and save to `olympix-results/mutation_test/mutat
 | ... | ... | ... | ... | Yes/No | test1(), test2() |
 ```
 
-### Step 7: Report to User
+### Step 8: Report to User
 
 Tell the user:
 - Mutation score percentage
@@ -146,11 +158,17 @@ Tell the user:
 | 0 | Run `auth` skill | Must be authenticated |
 | 1 | Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` | `forge build` must pass |
 | 2 | Identify top 10 contracts (plugin convention; CLI accepts up to 100) | Concrete contracts only |
-| 3 | `olympix generate-mutation-tests -w . -p ... --agent` | Record session_id |
-| 4 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
-| 5 | `olympix mutation-testing --agent` (connect_session) | Retrieve results |
-| 6 | Save `olympix-results/mutation_test/mutation_results.md` | — |
-| 7 | Report to user | — |
+| 3 | Suggest a session name; ask the user to confirm/change it | Record `{SESSION_TITLE}` |
+| 4 | `printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \| olympix generate-mutation-tests -w . -p ... --agent` | Record session_id |
+| 5 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
+| 6 | `olympix mutation-testing --agent` (connect_session) | Retrieve results |
+| 7 | Save `olympix-results/mutation_test/mutation_results.md` | — |
+| 8 | Report to user | — |
+
+## Important Notes
+
+- **Session naming:** Always name the session and ask the user to confirm or change it, suggesting a sensible default (repo identity `<org>/<repo>@<short-sha>` from git, falling back to the repo folder name). Pass the confirmed name in the `new_session` action's `data.title`. Older CLIs ignore the title and keep the default name (`<org>/<repo>@<short-sha>` or a timestamp) — if naming has no effect, suggest `olympix update`.
+- **Never state or imply an expected scan duration**, and never call a long scan abnormal (e.g. "running longer than typical (~17 min)"). Report phase/state only — "still running", "scanning", "done", "failed". The `~90 second` poll cadence is an internal mechanic; do not present it to the user as an ETA.
 
 ## Common Issues
 
