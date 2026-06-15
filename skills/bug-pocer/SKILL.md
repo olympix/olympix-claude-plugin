@@ -42,6 +42,24 @@ Run the `auth` skill to check authentication.
 
 Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`.
 
+### Step 1.5: Choose Scan Mode — Full Repo or Diff
+
+BugPocer can scan the **entire repo** or only the **code that changed** versus a git ref (diff mode — faster, focused on a branch/PR). **Ask the user which they want** with `AskUserQuestion` before starting the session:
+
+- **Full run** (default) — analyze all in-scope contracts.
+- **Diff mode** — analyze only code changed versus a base git ref. Ask for the **base ref** (commit/branch/tag — e.g. `main`, `origin/main`, a commit SHA). Optionally a **target ref** (must be the currently checked-out commit / `HEAD`; defaults to the working tree).
+
+This choice only changes the launch command in Step 2:
+
+- Full run: `olympix bug-pocer -w . --agent`
+- Diff mode: `olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>]`
+
+**Diff-mode behavior:**
+- The diff defines scan scope — BugPocer analyzes only the changed code. The scope-review event still appears; the diff narrows what is ultimately analyzed.
+- **An empty or unresolvable diff aborts the session** — if nothing changed versus the base, the CLI reports it and exits *before* scope review. Pick a base with real changes.
+- `--diff-target` must be the checked-out `HEAD`. A dirty working tree is compared against the working tree (committed line numbers may shift); omit `--diff-target` to diff against the working tree.
+- `--diff-target` without `--diff-base` is an error.
+
 ### Step 2: Start BugPocer Session
 
 The BugPocer flow is stateful and interactive via stdin/stdout JSONL, and it must be driven across **multiple separate Bash calls** — you cannot hold one long-lived interactive process open inside a single tool call. Drive it with a background process whose stdin is a FIFO and whose stdout goes to a log file:
@@ -65,6 +83,8 @@ Then start the CLI with another `run_in_background` Bash call, stdin attached to
 
 ```bash
 olympix bug-pocer -w . --agent < .opix-bp-in > .opix-bp-events.log 2>&1
+# Diff mode (per Step 1.5): append the diff flags —
+# olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>] < .opix-bp-in > .opix-bp-events.log 2>&1
 ```
 
 Drive each exchange in its own Bash call:
@@ -347,3 +367,5 @@ Tell the user:
 | CLI exits as soon as you echo an action | The FIFO write end closed (EOF) — make sure the `sleep 3600 > .opix-bp-in` holder is still running (`kill -0 "$(cat .opix-bp-holder.pid)"`); relaunch it via `run_in_background` if it was reaped |
 | A FIFO write hangs / times out | The CLI exited (no reader on the FIFO) — that's why every write goes through the 5s watchdog (`perl -e 'alarm 5; open(my $f, ">", ".opix-bp-in") or die; print $f "$ARGV[0]\n"' '{"action":"..."}'`, or GNU `timeout 5` on Linux/brew); read `.opix-bp-events.log` to see why the CLI stopped |
 | Reconnect errors with "Session may be Killed..." | The session is Killed/expired — start a new session; do not retry the reconnect |
+| Diff mode exits before scope review | Empty/unresolvable diff — nothing changed vs `--diff-base`, or the ref is invalid. Pick a base ref with real changes, or run full mode |
+| `--diff-target requires --diff-base` | You passed `--diff-target` alone — supply `--diff-base <ref>` too, or drop `--diff-target` to diff against the working tree |
