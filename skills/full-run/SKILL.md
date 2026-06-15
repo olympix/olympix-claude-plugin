@@ -11,13 +11,13 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, Agent, AskUserQuestion
 
 # Full Run (background)
 
-Run the full Olympix security analysis suite on a Foundry-based Solidity repository. The fast, must-run-once setup happens up front; then each long-running tool is dispatched as a **background agent** so the user can keep talking to you while the scans run. You stay free to chat, relay updates as each tool finishes, and post a periodic heartbeat.
+Run the full Olympix security analysis suite on a Foundry- or Hardhat-based Solidity repository. The fast, must-run-once setup happens up front; then each long-running tool is dispatched as a **background agent** so the user can keep talking to you while the scans run. You stay free to chat, relay updates as each tool finishes, and post a periodic heartbeat.
 
 ## Prerequisites
 
-- Foundry (`forge`) installed
+- Foundry (`forge`) or Hardhat (`npx hardhat`) installed
 - `olympix` CLI installed and authenticated
-- Working directory is the root of a Foundry project
+- Working directory is the root of a Foundry or Hardhat project
 
 ## CLI Capability Check
 
@@ -44,7 +44,7 @@ Run the `auth` skill once. Individual tools do not need to re-check.
 
 ### Step 1: Verify Repository Builds
 
-Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`. **HARD STOP** if `forge build` cannot be made to pass — no tool can run without it.
+Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` (auto-detects Foundry vs Hardhat). **HARD STOP** if the repo cannot be made to compile — no tool can run without it.
 
 ### Step 2: Rank Contracts Once
 

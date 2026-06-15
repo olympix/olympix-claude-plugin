@@ -11,13 +11,13 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 # BugPocer Security Analysis
 
-Run Olympix BugPocer on a Foundry-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and Q&A — is driven programmatically through JSONL.
+Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and Q&A — is driven programmatically through JSONL.
 
 ## Prerequisites
 
-- Foundry (`forge`) installed
+- Foundry (`forge`) or Hardhat (`npx hardhat`) installed
 - `olympix` CLI installed and authenticated
-- Working directory is the root of a Foundry project
+- Working directory is the root of a Foundry or Hardhat project
 
 ## CLI Capability Check
 

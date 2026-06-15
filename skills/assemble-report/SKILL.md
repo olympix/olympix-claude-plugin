@@ -16,7 +16,7 @@ Collect all Olympix tool results into a structured `olympix-results/` directory 
 ## Prerequisites
 
 - Static analysis has been run (should already be in `olympix-results/olympix-static.md`)
-- Working directory is the root of the Foundry project
+- Working directory is the root of the Foundry or Hardhat project
 
 ## CLI Capability Check
 

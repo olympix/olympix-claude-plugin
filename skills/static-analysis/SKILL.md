@@ -1,7 +1,7 @@
 ---
 name: static-analysis
 description: >
-  Use when the user wants Olympix static analysis run on a Foundry-based Solidity
+  Use when the user wants Olympix static analysis run on a Foundry- or Hardhat-based Solidity
   repo — runs in agent mode, verifies the repo builds first, returns findings
   synchronously via JSONL, and saves them to olympix-results/olympix-static.md.
   TRIGGER: "static analysis", "analyze", "run analyzer", "vulnerability scan", "olympix analyze"
@@ -10,13 +10,13 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill
 
 # Static Analysis
 
-Run Olympix static analysis on a Foundry-based Solidity repository and save the results to `olympix-results/olympix-static.md`.
+Run Olympix static analysis on a Foundry- or Hardhat-based Solidity repository and save the results to `olympix-results/olympix-static.md`.
 
 ## Prerequisites
 
-- Foundry (`forge`) installed
+- Foundry (`forge`) or Hardhat (`npx hardhat`) installed
 - `olympix` CLI installed and authenticated
-- Working directory is the root of a Foundry project
+- Working directory is the root of a Foundry or Hardhat project
 
 ## CLI Capability Check
 

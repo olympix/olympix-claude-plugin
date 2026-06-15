@@ -6,7 +6,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 
 | Skill | When to use |
 |-------|-------------|
-| `olympix:full-run` | User wants a complete security analysis of a Foundry repo |
+| `olympix:full-run` | User wants a complete security analysis of a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner only |
 | `olympix:mutation-test` | Generate mutation tests (top 10 contracts by criticality) |
 | `olympix:fuzz-test` | Generate fuzz tests (top 3 contracts by criticality) |
@@ -17,7 +17,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 
 ## Key rules
 
-- Always verify `forge build` succeeds before running any Olympix tool.
+- Always verify the repo compiles before running any Olympix tool — `forge build` (Foundry) or `npx hardhat compile` (Hardhat). The CLI auto-detects the project type; see `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`.
 - All tools use `--agent` flag for structured JSONL output on stdout.
 - Input is sent as JSONL on stdin (actions like `confirm_all`, `disconnect`, etc.).
 - Contract selection follows the canonical criticality ranking in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md` — read it rather than improvising a ranking.

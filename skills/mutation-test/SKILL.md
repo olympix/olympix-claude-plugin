@@ -1,7 +1,7 @@
 ---
 name: mutation-test
 description: >
-  Use when the user wants Olympix mutation test generation run on a Foundry-based
+  Use when the user wants Olympix mutation test generation run on a Foundry- or Hardhat-based
   Solidity repo via agent mode — verifies the repo builds, identifies the top 10
   most critical contracts, dispatches the job, waits for completion, and retrieves
   results with kill scores.
@@ -11,13 +11,13 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 # Mutation Test Generation
 
-Run Olympix mutation test generation on a Foundry-based Solidity repository using agent mode: verify the repo builds, select the top 10 most critical contracts, dispatch the job, wait for completion, and retrieve results.
+Run Olympix mutation test generation on a Foundry- or Hardhat-based Solidity repository using agent mode: verify the repo builds, select the top 10 most critical contracts, dispatch the job, wait for completion, and retrieve results.
 
 ## Prerequisites
 
-- Foundry (`forge`) installed
+- Foundry (`forge`) or Hardhat (`npx hardhat`) installed
 - `olympix` CLI installed and authenticated
-- Working directory is the root of a Foundry project
+- Working directory is the root of a Foundry or Hardhat project
 
 ## CLI Capability Check
 

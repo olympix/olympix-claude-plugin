@@ -2,7 +2,7 @@
 name: fuzz-test
 description: >
   Use when the user wants Olympix fuzz test generation prepared and dispatched for a
-  Foundry-based Solidity repo — verifies the repo builds, identifies the top 3 most
+  Foundry- or Hardhat-based Solidity repo — verifies the repo builds, identifies the top 3 most
   critical contracts, then runs olympix generate-fuzz-tests. Agent mode is NOT
   supported for fuzz tests.
   TRIGGER: "fuzz tests", "fuzz test", "generate fuzz tests", "fuzzing", "fuzz-test"
@@ -11,15 +11,15 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill
 
 # Fuzz Test Generation
 
-Prepare a Foundry-based Solidity repository for Olympix fuzz test generation by verifying the repo builds, selecting the top 3 most critical contracts, and running the generator.
+Prepare a Foundry- or Hardhat-based Solidity repository for Olympix fuzz test generation by verifying the repo builds, selecting the top 3 most critical contracts, and running the generator.
 
 **Important:** Agent mode (`--agent`) is NOT supported for fuzz test generation. This tool runs in TUI/standard mode only. Results arrive via email.
 
 ## Prerequisites
 
-- Foundry (`forge`) installed
+- Foundry (`forge`) or Hardhat (`npx hardhat`) installed
 - `olympix` CLI installed and authenticated
-- Working directory is the root of a Foundry project
+- Working directory is the root of a Foundry or Hardhat project
 
 ## Process
 

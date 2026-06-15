@@ -84,7 +84,7 @@ It offers two scopes:
 
 ## Usage
 
-Open Claude Code inside a Foundry project directory and run:
+Open Claude Code inside a Foundry or Hardhat project directory and run:
 
 ```
 /olympix:full-run
@@ -92,7 +92,7 @@ Open Claude Code inside a Foundry project directory and run:
 
 This will:
 1. Check CLI authentication (login if needed)
-2. Run `forge build` to verify the project compiles
+2. Detect the project type and run `forge build` (Foundry) or `npx hardhat compile` (Hardhat) to verify it compiles
 3. Run static analysis and save findings
 4. Generate mutation tests for the top 10 most critical contracts
 5. Generate unit tests with coverage scaffolding
@@ -105,7 +105,7 @@ This will:
 
 | Skill | Description |
 |-------|-------------|
-| `olympix:full-run` | Run all Olympix tools on a Foundry repo |
+| `olympix:full-run` | Run all Olympix tools on a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner |
 | `olympix:mutation-test` | Generate mutation tests for top 10 contracts |
 | `olympix:fuzz-test` | Generate fuzz tests for top 3 contracts |

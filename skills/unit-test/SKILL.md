@@ -2,7 +2,7 @@
 name: unit-test
 description: >
   Use when the user wants Olympix unit test generation prepared and run for a
-  Foundry-based Solidity repo — verifies forge coverage compatibility, scaffolds the
+  Foundry- or Hardhat-based Solidity repo — verifies forge coverage compatibility, scaffolds the
   OlympixUnitTest base contract and test files for the top 10 most critical contracts,
   adds setup functions, dispatches olympix generate-unit-tests via agent mode, then
   waits for results and retrieves coverage data.
@@ -12,13 +12,13 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Edit, Skill, AskUserQuestion
 
 # Unit Test Generation
 
-Prepare a Foundry-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator via agent mode.
+Prepare a Foundry- or Hardhat-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator via agent mode.
 
 ## Prerequisites
 
-- Foundry (`forge`) installed
+- Foundry (`forge`) or Hardhat (`npx hardhat`) installed
 - `olympix` CLI installed and authenticated
-- Working directory is the root of a Foundry project
+- Working directory is the root of a Foundry or Hardhat project
 
 ## CLI Capability Check
 
@@ -39,17 +39,27 @@ If `LEGACY_CLI` (the `--agent` flag is rejected), the CLI is pre-agent-mode — 
 
 Run the `auth` skill to check authentication.
 
-### Step 1: Verify Forge Coverage Compatibility
+### Step 1: Verify Coverage Compatibility
+
+Olympix supports Foundry and Hardhat repos (the CLI auto-detects). Pick the **coverage command for this repo** by project type — it is reused at every coverage checkpoint below:
+
+- **Foundry** (`foundry.toml`): `forge coverage --ir-minimum --allow-failure`
+- **Hardhat** (`hardhat.config.*`, no `foundry.toml`): `npx hardhat coverage` (requires the `solidity-coverage` plugin; install per the project's README if missing)
 
 ```bash
+# Foundry
 forge coverage --ir-minimum --allow-failure
+# Hardhat
+npx hardhat coverage
 ```
+
+> **Substitution note:** Steps 6, 8, and 9 below show the Foundry commands (`forge coverage`, `forge test`) and the Foundry scaffold pattern (`OlympixUnitTest`, `.t.sol`). On a Hardhat repo, run the coverage command above in place of every `forge coverage --ir-minimum --allow-failure`. The stack-too-deep triage is **Foundry-specific** — Hardhat repos that compile under `npx hardhat compile` do not hit it.
 
 **If it succeeds:** proceed to Step 2.
 
 **If it fails with build/dependency errors:** read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`, then retry.
 
-**If it fails with "stack too deep":** read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/troubleshooting.md` for the stack-too-deep triage process. Determine if the problem is localized or repo-wide.
+**If it fails with "stack too deep" (Foundry):** read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/troubleshooting.md` for the stack-too-deep triage process. Determine if the problem is localized or repo-wide.
 
 > **HARD STOP (repo-wide stack-too-deep):**
 > Do NOT proceed. Do NOT create test files. Do NOT run the generator. Tell the user the repo is incompatible with unit test generation.
