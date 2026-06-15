@@ -4,14 +4,17 @@ description: >
   Use when the user wants Olympix BugPocer security analysis run fully automated via
   agent mode — handles the entire flow: scope review, validation, security questions
   (incl. follow-ups), scan, findings retrieval with verdicts, Q&A, and built-in
-  PDF + PoC export, all driven programmatically.
-  TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer"
+  PDF + PoC export, all driven programmatically. Always asks the user up front
+  whether to scan the full repo or only the diff vs a git ref (diff mode).
+  TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer", "diff mode", "diff scan", "scan the diff"
 allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
 # BugPocer Security Analysis
 
 Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and Q&A — is driven programmatically through JSONL.
+
+> **⛔ REQUIRED FIRST ACTION — do not skip:** before launching the CLI, you MUST ask the user whether to run a **full-repo scan** or a **diff scan** (only code changed vs a git ref). See [Step 1.5](#step-15-choose-scan-mode--full-repo-or-diff). The launch command in Step 2 differs based on the answer — launching without asking is a bug.
 
 ## Prerequisites
 
@@ -42,9 +45,9 @@ Run the `auth` skill to check authentication.
 
 Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`.
 
-### Step 1.5: Choose Scan Mode — Full Repo or Diff
+### Step 1.5: Choose Scan Mode — Full Repo or Diff  ⛔ REQUIRED, ASK BEFORE STEP 2
 
-BugPocer can scan the **entire repo** or only the **code that changed** versus a git ref (diff mode — faster, focused on a branch/PR). **Ask the user which they want** with `AskUserQuestion` before starting the session:
+**This is mandatory and easy to forget — do it before any CLI launch.** BugPocer can scan the **entire repo** or only the **code that changed** versus a git ref (diff mode — faster, focused on a branch/PR). **Ask the user which they want** with `AskUserQuestion` (do not assume full; do not skip) before starting the session:
 
 - **Full run** (default) — analyze all in-scope contracts.
 - **Diff mode** — analyze only code changed versus a base git ref. Ask for the **base ref** (commit/branch/tag — e.g. `main`, `origin/main`, a commit SHA). Optionally a **target ref** (must be the currently checked-out commit / `HEAD`; defaults to the working tree).
@@ -61,6 +64,8 @@ This choice only changes the launch command in Step 2:
 - `--diff-target` without `--diff-base` is an error.
 
 ### Step 2: Start BugPocer Session
+
+> **Checkpoint before launching:** have you asked the user full-repo vs diff (Step 1.5)? If not, stop and ask now — the launch command below depends on the answer (diff mode appends `--diff-base`).
 
 The BugPocer flow is stateful and interactive via stdin/stdout JSONL, and it must be driven across **multiple separate Bash calls** — you cannot hold one long-lived interactive process open inside a single tool call. Drive it with a background process whose stdin is a FIFO and whose stdout goes to a log file:
 
