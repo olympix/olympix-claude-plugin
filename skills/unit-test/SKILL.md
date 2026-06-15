@@ -320,8 +320,6 @@ Record the **session_id**.
 
 ### Step 13: Wait for Completion
 
-> **Poll in a blocking, in-turn loop — do not background the poll and end your turn.** If you are running as a dispatched subagent you are **not** re-invoked: backgrounding a `sleep`/poll and exiting silently drops the results (the session completes backend-side but nothing is retrieved). Wait between polls in-turn (the `Monitor` tool or a foreground loop) until terminal, then go straight to Step 14.
-
 Poll the session status periodically (every ~90 seconds) until `Completed` or `Failed`:
 
 ```bash
