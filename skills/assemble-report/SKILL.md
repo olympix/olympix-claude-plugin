@@ -96,7 +96,7 @@ printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"di
   | olympix mutation-testing --agent
 ```
 
-Returns `mutation_test_results` event with: `total_mutations`, `killed`, `survived`, `score_percentage`, and per-mutation details.
+Returns `mutation_test_results` event with: `total_mutations`, `killed`, `survived`, `score_percentage`, and per-mutation details. Connecting also writes `mutation-test-results-<session-id>.csv` into the workspace automatically — copy it into `olympix-results/mutation_test/` for the deliverable.
 
 Also available at `.opix/agent/mutation-tests/results.json`.
 
@@ -109,7 +109,7 @@ printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"di
   | olympix unit-testing --agent
 ```
 
-Returns `unit_test_results` event with: `total_files`, `successful_files`, `branches_coverage`, and per-file coverage data.
+Returns `unit_test_results` event with: `total_files`, `successful_files`, `branches_coverage`, and per-file coverage data. Connecting also writes every generated `.t.sol` test file into the workspace automatically (at each file's `test_path`) — copy them into `olympix-results/unit_test/` for the deliverable.
 
 Also available at `.opix/agent/unit-tests/results.json`.
 
@@ -124,7 +124,7 @@ printf '{"action":"disconnect"}\n' \
 
 Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`, plus the verdict/PoC fields: `bugpocer_verdict`, `user_verdict`, `user_verdict_reason`, `effective_verdict`, `confidence_score`, `poc_summary`, `poc_content`. Report verdicts by `effective_verdict`, distinguishing BugPocer's automated call from human review (`user_verdict` = `unreviewed` until a human sets it).
 
-Also available at `.opix/agent/<session-id>/findings.json`.
+Also available at `.opix/agent/<session-id>/findings.json`. Connecting also auto-writes the artifact files (PoC exploit code under `pocs_<session-id>/` and the split `true_positives_*.md` / `unverified_*.md` reports, CLI default filter) — copy them into `olympix-results/bugpocer_pocs/`.
 
 Parse and save to `olympix-results/bugpocer_pocs/findings.md` — the same path the `bug-pocer` skill writes, so re-assembly overwrites rather than duplicates.
 

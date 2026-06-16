@@ -69,15 +69,19 @@ Derive a distinguishable per-tool name from the confirmed base:
 
 These titles are passed to each tool's `new_session` (see below) so each session is identifiable in the CLI.
 
-### Step 5: BugPocer opt-in
+### Step 5: BugPocer opt-in (and scan mode)
 
 Ask the user with AskUserQuestion whether to run BugPocer (options: "Yes, run it" / "Skip for now"), noting it incurs backend scan cost. Record the choice for Phase 2.
+
+**If they opt in, ask the scan mode now too** (full-repo vs diff) with AskUserQuestion, and if diff, the base ref — because the background BugPocer agent has no user to prompt. Decide it here while the user is present and pass the answer to the agent. Default: **full**. Record `{BUGPOCER_SCAN_MODE}` (full, or `diff --diff-base <ref>`).
 
 ---
 
 ## Phase 2 — Dispatch background agents
 
-Launch one background agent per long-running tool with the `Agent` tool, `run_in_background: true`, `subagent_type: general-purpose`. Each agent owns its tool end-to-end (dispatch → poll → retrieve → save) and returns a structured result. **Dispatch them in a single message** so they run concurrently. The user keeps chatting with you the whole time.
+Launch one background agent per long-running tool with the `Agent` tool, `run_in_background: true`, `subagent_type: general-purpose`. Each agent owns its tool end-to-end (dispatch → poll → retrieve → save) and returns a structured result.
+
+> **⛔ ALL agents dispatch in ONE message, simultaneously, in the background.** Put every `Agent` call (mutation, unit, and BugPocer if opted in) in a **single response** with `run_in_background: true`. Do NOT run any tool's flow in the foreground. Do NOT wait for one agent before dispatching the next. **In particular, BugPocer's interactive setup (scope → validation → security questions → submit) runs INSIDE its own background agent — never drive it from the main loop.** The whole point: the user keeps chatting with you while all tools run concurrently. If you find yourself "waiting for BugPocer" before the others start, you've done it wrong — fan them all out at once.
 
 Pass each agent: the absolute repo path, the ranked contract list, and its session name. **Tell each agent to USE the session name you provide verbatim and NOT to ask for a name** — the user has already confirmed it here, and a background agent has no user to prompt.
 
@@ -92,9 +96,10 @@ Pass each agent: the absolute repo path, the ranked contract list, and its sessi
 - Return: session ID, name, coverage, test count, status, output path. If a repo-wide stack-too-deep blocks coverage, return that as the status instead of dispatching.
 
 **BugPocer agent** (only if the user opted in) — prompt it to run the `bug-pocer` skill flow:
-- Start the session through the FIFO driver, passing the name in `new_session`: `{"action":"new_session","data":{"title":"<base> [bugpocer]"}}`.
-- Confirm scope + validation items; answer security questions from the repo per the bug-pocer skill's deterministic rule (do NOT blindly skip them); skip docs.
-- Poll until `InitialScanCompleted` (BugPocer never reports `Completed`), retrieve findings via `connect-bp-session`, save to `olympix-results/bugpocer_pocs/`.
+- **Run FULLY NON-INTERACTIVELY — you are a background agent with NO user. Do NOT call `AskUserQuestion` for anything (scan mode, session name, scope, docs). Use the scan mode passed to you (`{BUGPOCER_SCAN_MODE}`, default full) and the session name verbatim. Never block on a question.** The bug-pocer skill's "ask full-vs-diff" gate explicitly exempts dispatched/background agents — skip it.
+- Start the session through the FIFO driver, passing the name in `new_session`: `{"action":"new_session","data":{"title":"<base> [bugpocer]"}}`. For diff mode, append `--diff-base <ref>` to the launch command per `{BUGPOCER_SCAN_MODE}`.
+- Confirm scope + validation items; answer security questions from the repo per the bug-pocer skill's deterministic rule (do NOT blindly skip them); skip docs — all without prompting any user.
+- Poll until `InitialScanCompleted` (BugPocer never reports `Completed`), retrieve findings via `connect-bp-session` (PoCs + split markdown download automatically on retrieval), save to `olympix-results/bugpocer_pocs/`.
 - Return: session ID, name, finding counts by severity/verdict, status, output path.
 
 After dispatching, tell the user: which agents are running, the session names, and that they can keep chatting — you'll report as each finishes.

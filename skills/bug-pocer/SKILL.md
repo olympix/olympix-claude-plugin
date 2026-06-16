@@ -15,6 +15,8 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and Q&A — is driven programmatically through JSONL.
 
 > **⛔ REQUIRED FIRST ACTION — do not skip:** before launching the CLI, you MUST ask the user whether to run a **full-repo scan** or a **diff scan** (only code changed vs a git ref). See [Step 1.5](#step-15-choose-scan-mode--full-repo-or-diff). The launch command in Step 2 differs based on the answer — launching without asking is a bug.
+>
+> **Exception — dispatched/background agent (e.g. from `full-run`):** if you are running as a background agent with no interactive user, do NOT ask anything. Use the scan mode handed to you by the caller (default: **full**), and never block on a question — a background agent has no user to prompt. The "ask the user" rule applies only to interactive runs.
 
 ## Prerequisites
 
@@ -47,7 +49,11 @@ Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md`.
 
 ### Step 1.5: Choose Scan Mode — Full Repo or Diff  ⛔ REQUIRED, ASK BEFORE STEP 2
 
-**This is mandatory and easy to forget — do it before any CLI launch.** BugPocer can scan the **entire repo** or only the **code that changed** versus a git ref (diff mode — faster, focused on a branch/PR). **Ask the user which they want** with `AskUserQuestion` (do not assume full; do not skip) before starting the session:
+**This is mandatory and easy to forget — do it before any CLI launch.** BugPocer can scan the **entire repo** or only the **code that changed** versus a git ref (diff mode — faster, focused on a branch/PR).
+
+> **Skip this question entirely if you are a dispatched/background agent (no interactive user, e.g. from `full-run`):** use the scan mode the caller gave you (default **full**) and go straight to Step 2. Never call `AskUserQuestion` with no user — it blocks the whole run.
+
+For interactive runs, **ask the user which they want** with `AskUserQuestion` (do not assume full; do not skip) before starting the session:
 
 - **Full run** (default) — analyze all in-scope contracts.
 - **Diff mode** — analyze only code changed versus a base git ref. Ask for the **base ref** (commit/branch/tag — e.g. `main`, `origin/main`, a commit SHA). Optionally a **target ref** (must be the currently checked-out commit / `HEAD`; defaults to the working tree).
@@ -65,7 +71,7 @@ This choice only changes the launch command in Step 2:
 
 ### Step 2: Start BugPocer Session
 
-> **Checkpoint before launching:** have you asked the user full-repo vs diff (Step 1.5)? If not, stop and ask now — the launch command below depends on the answer (diff mode appends `--diff-base`).
+> **Checkpoint before launching (interactive runs only):** have you asked the user full-repo vs diff (Step 1.5)? If not, stop and ask now — the launch command below depends on the answer (diff mode appends `--diff-base`). **Dispatched/background agents skip this** — use the mode the caller passed (default full) and launch.
 
 The BugPocer flow is stateful and interactive via stdin/stdout JSONL, and it must be driven across **multiple separate Bash calls** — you cannot hold one long-lived interactive process open inside a single tool call. Drive it with a background process whose stdin is a FIFO and whose stdout goes to a log file:
 
@@ -222,15 +228,12 @@ CLI exits with code 0. The backend scan starts processing.
 
 The scan runs **asynchronously** on the backend — there is nothing to wait on interactively. Once
 `validation_submitted` arrives the CLI has already exited; do NOT hold a subprocess open waiting for
-an answer. Poll session status until `InitialScanCompleted`:
+an answer.
 
-```bash
-olympix sessions --agent
-```
+**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="bug_pocer"`. The loop matches on `id`, reads `status`, and breaks on `InitialScanCompleted` (BugPocer never reports `Completed`) or `Killed`, using plain string equality (a hand-rolled `case "$ST"` with escaped quotes never matches and hangs the run for ~1 hour).
 
-Look for the session in `bug_pocer` array. Poll on an interval; keep doing other work between polls
-rather than blocking. Do not tell the user how long it should take or call a long scan abnormal —
-scans routinely take much longer than expected.
+Keep doing other work between polls rather than blocking. Do not tell the user how long it should take
+or call a long scan abnormal — scans routinely take much longer than expected.
 
 ### Step 5: Retrieve Findings
 
@@ -252,7 +255,7 @@ If you intend to continue with Q&A, PDF export, or PoC export (Steps 6-8), recon
 **Expected output:**
 ```
 {"event":"progress","data":{"message":"Connected to session <id>. Fetching findings..."}}
-{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["ask_question","generate_pdf","save_pocs","disconnect"]}
+{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["ask_question","generate_pdf","save_pocs","save_findings_md","disconnect"]}
 ```
 
 Each finding carries:
@@ -269,6 +272,16 @@ Each finding carries:
 | `poc_summary`, `poc_content` | PoC summary + full exploit source |
 
 Findings auto-persist to `.opix/agent/<session-id>/findings.json`.
+
+**Artifact files download automatically on retrieval (default behavior).** As soon as `findings_ready`
+arrives, the CLI writes — using the CLI default filter (true positives + unverified; false positives
+excluded) — the local artifact files to disk and emits `pocs_saved` + `findings_saved` events:
+- **PoC exploit code**, one file per finding, under `pocs_<session-id>/` (real PoC code, not the summary).
+- **Split markdown reports**: `true_positives_<id>_<ts>.md` and `unverified_<id>_<ts>.md` in the working directory.
+
+No action is needed to get these — they are on disk after `findings_ready`. The `save_pocs` and
+`save_findings_md` actions (Steps 8 / 8.5) remain available only to **re-export** them. The PDF
+(Step 7) is NOT auto-generated — it is a heavier backend call, so request it explicitly when wanted.
 
 ### Step 6: Q&A Loop (Optional)
 
@@ -305,9 +318,10 @@ Wait for `{"event":"pdf_generated","data":{"session_id":"<id>","pdf_path":"<abs-
 On failure an `error` event is emitted; report it and continue. Move/copy the file into
 `olympix-results/` if desired.
 
-### Step 8: Export PoCs (built-in)
+### Step 8: Re-export PoCs (built-in, optional)
 
-Export every finding's proof-of-concept to disk via the built-in exporter. Send:
+PoCs are already written automatically on retrieval (see Step 5). Use this action only to **re-export**
+them. Export every finding's proof-of-concept to disk via the built-in exporter. Send:
 
 ```json
 {"action":"save_pocs"}
@@ -315,6 +329,24 @@ Export every finding's proof-of-concept to disk via the built-in exporter. Send:
 
 Wait for `{"event":"pocs_saved","data":{"session_id":"<id>","saved_count":N,"output_path":"<dir>"}}`.
 This writes one PoC file per finding (named by unit + vulnerability). Report the count and path.
+
+PoC export applies the **CLI default filter** (true positives + unverified, all severities; false
+positives excluded) — same selection as the TUI's "Save PoCs" default.
+
+### Step 8.5: Re-export split findings markdown (built-in, optional)
+
+The split markdown reports (`true_positives_<id>_<ts>.md`, `unverified_<id>_<ts>.md`) are already
+written automatically on retrieval (see Step 5). Use this action only to **re-export** them — the
+same files the TUI's "Save Findings md" produces, using the same CLI default filter (true positives +
+unverified; false positives excluded). Send:
+
+```json
+{"action":"save_findings_md"}
+```
+
+Wait for `{"event":"findings_saved","data":{"session_id":"<id>","files":[{"category":"True Positives","count":N,"path":"<abs-path>"},...]}}`.
+On failure an `error` event is emitted (e.g. no findings match the default filter); report it and continue.
+Move/copy the files into `olympix-results/` if desired.
 
 ### Step 9: Save Results
 

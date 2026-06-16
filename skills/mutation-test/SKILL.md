@@ -95,13 +95,7 @@ Record the **session_id** from the `results_ready` event.
 
 ### Step 5: Wait for Completion
 
-Poll the session status periodically (every ~90 seconds) until it shows `Completed` or `Failed`:
-
-```bash
-olympix sessions --agent
-```
-
-Look for the session ID in the `mutation_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
+**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="mutation_tests"`. The loop matches on `id`, reads `status`, and breaks on `Completed`/`Failed` using plain string equality (a hand-rolled `case "$ST"` with escaped quotes never matches and hangs the run for ~1 hour).
 
 **If status is `Failed`:** stop polling and go to Step 6 to read the `error_message`.
 
@@ -123,6 +117,10 @@ printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"di
 Each mutation in the `mutations` array has: `file`, `line`, `original`, `mutated`, `killed` (bool), `broken_tests` (array).
 
 Results also auto-persist to `.opix/agent/mutation-tests/results.json` in the workspace. Note: at dispatch time this file contains only the **dispatch receipt** (session ID + "generation started" message); the **full results** are written to it when you retrieve them via `connect_session`.
+
+**The results CSV is downloaded automatically.** On retrieval, `mutation-test-results-<session-id>.csv` is written into the workspace (parity with the TUI "Download CSV"). A `progress` event reports the path. No extra action is needed.
+
+> **Quick-fix files:** the mutation quick-fix *test files* are not part of the agent-mode result payload (only `fixed_mutations_count` / `score_with_quick_fixes_percentage` aggregates are). They cannot be downloaded client-side today — surfacing them requires a server-side change to include the fixed test content in the results.
 
 **If status is `Failed`:** The session will include an `error_message` field explaining the failure (e.g., `forge test` compilation error).
 

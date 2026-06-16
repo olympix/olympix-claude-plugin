@@ -320,13 +320,7 @@ Record the **session_id**.
 
 ### Step 13: Wait for Completion
 
-Poll the session status periodically (every ~90 seconds) until `Completed` or `Failed`:
-
-```bash
-olympix sessions --agent
-```
-
-Look for the session ID in the `unit_tests` array. Status will be `InProgress` → `Completed` or `Failed`.
+**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="unit_tests"`. The loop matches on `id`, reads `status`, and breaks on `Completed`/`Failed` using plain string equality (a hand-rolled `case "$ST"` with escaped quotes never matches and hangs the run for ~1 hour).
 
 **If status is `Failed`:** stop polling and go to Step 14 to read the `error_message`.
 
@@ -346,6 +340,8 @@ printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"di
 ```
 
 Results also auto-persist to `.opix/agent/unit-tests/results.json`. Note: at dispatch time this file contains only the dispatch receipt; the full results are written to it at this retrieval step.
+
+**Generated test files are downloaded automatically.** On retrieval, every generated `.t.sol` file (those with new tests) is written into the workspace at its `test_path` (parity with the TUI "Download Generated Files"). A `progress` event reports how many files were written and where. No extra action is needed — the `.t.sol` files are on disk after this step.
 
 **If status is `Failed`:** The session includes an `error_message` field.
 
