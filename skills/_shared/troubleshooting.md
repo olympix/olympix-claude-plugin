@@ -17,7 +17,7 @@ When `forge coverage --ir-minimum` fails with stack-too-deep:
 
 **Key insight:** `src` in `foundry.toml` controls what gets compiled. If `src = "contracts"`, forge compiles ALL contracts under viaIR. If `src = "src"` (or the original value), forge only compiles what tests transitively import. Changing `src` can INTRODUCE stack-too-deep errors. Keep the original `src` value.
 
-## `forge test --via-ir` is NOT a Prerequisite for Mutation/Fuzz Tests
+## `forge test --via-ir` is NOT a Prerequisite for Mutation Tests
 
 The Olympix CLI handles viaIR compilation server-side. Only `forge build` (basic compilation) is required locally.
 

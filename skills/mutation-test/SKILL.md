@@ -13,6 +13,10 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 Run Olympix mutation test generation on a Foundry- or Hardhat-based Solidity repository using agent mode: verify the repo builds, select the top 10 most critical contracts, dispatch the job, wait for completion, and retrieve results.
 
+**What this tool does:** injects small deliberate bugs ("mutants") into the contracts, then runs the existing test suite against each. The **kill score** = % of mutants the tests caught. A low score means the tests pass even when the code is broken — i.e. weak coverage of real behavior. It measures *test quality*, not vulnerabilities.
+
+**Where it fits in the flow:** `Static Analysis → Unit Tests → Mutation Tests (you are here) → BugPocer → Report`. Run after you have a test suite (the unit-test step) so there is something to score.
+
 ## Prerequisites
 
 - Foundry (`forge`) or Hardhat (`npx hardhat`) installed
@@ -57,12 +61,17 @@ Select the 10 most critical contracts. List the selected contracts with their fi
 Name the session so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
 
 ```bash
-org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+# Portable repo identity — NO `sed -E`: BSD/macOS sed rejects the non-greedy `+?`
+# with "RE error: repetition-operator operand invalid". Use POSIX parameter expansion.
+url=$(git remote get-url origin 2>/dev/null); url=${url%.git}; org_repo=""
 short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$url" ]; then repo=${url##*/}; rest=${url%/*}; org=${rest##*[:/]}; org_repo="$org/$repo"; fi
 if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
 ```
 
 **Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}`.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT ask — you have no user to prompt. Use the session name passed to you **verbatim** as `{SESSION_TITLE}` and skip straight to Step 4. Never call `AskUserQuestion`; it blocks the whole run.
 
 ### Step 4: Dispatch Mutation Test Job
 
@@ -149,6 +158,17 @@ Tell the user:
 - Which surviving mutations represent real coverage gaps
 - Results saved in `olympix-results/mutation_test/mutation_results.md`
 
+### Step 9: Offer to Triage the Survivors
+
+Right after reporting, **proactively ask** (use `AskUserQuestion`) whether to triage the surviving mutants — each survivor is a place where the code could break and no test would notice.
+
+- **"Yes, triage them"** — for each survived mutant, open `file:line`, read the original-vs-mutated diff, and explain what behavior is untested. Group by file; flag which gaps are dangerous (fund-moving / access-control paths) vs cosmetic. Optionally offer to write tests that kill the high-value survivors.
+- **"No, just the list"** — stop; the saved report is the deliverable.
+
+Make this offer every run — acting on survivors is the point of mutation testing.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT make this offer — you have no user to prompt and it would block. Just return your results to the orchestrator; it offers triage to the user once you report back.
+
 ## Quick Reference
 
 | Step | Command / Action | Gate |
@@ -162,6 +182,7 @@ Tell the user:
 | 6 | `olympix mutation-testing --agent` (connect_session) | Retrieve results |
 | 7 | Save `olympix-results/mutation_test/mutation_results.md` | — |
 | 8 | Report to user | — |
+| 9 | Offer to triage surviving mutants (`AskUserQuestion`) | Always offer |
 
 ## Important Notes
 

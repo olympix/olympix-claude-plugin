@@ -9,7 +9,6 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 | `olympix:full-run` | User wants a complete security analysis of a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner only |
 | `olympix:mutation-test` | Generate mutation tests (top 10 contracts by criticality) |
-| `olympix:fuzz-test` | Generate fuzz tests (top 3 contracts by criticality) |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
 | `olympix:bug-pocer` | Run BugPocer security analysis (fully automated via agent mode) |
 | `olympix:assemble-report` | Collect all results into olympix-results/report.md |
@@ -21,7 +20,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - All tools use `--agent` flag for structured JSONL output on stdout.
 - Input is sent as JSONL on stdin (actions like `confirm_all`, `disconnect`, etc.).
 - Contract selection follows the canonical criticality ranking in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md` — read it rather than improvising a ranking.
-- Top 10 contracts for mutation/unit tests (plugin convention; CLI hard limits differ per tool: mutation tests accept up to 100, unit tests at most 10), 3 for fuzz tests (CLI limit 3).
+- Top 10 contracts for mutation/unit tests (plugin convention; CLI hard limits differ per tool: mutation tests accept up to 100, unit tests at most 10).
 - Results persist automatically to `.opix/agent/` inside the workspace (`-w` path).
 - Additional formatted output goes to `olympix-results/` in the project root.
 - BugPocer runs fully automated via agent mode — no user handoff needed.
@@ -29,7 +28,6 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.
 - Static analysis runs synchronously. Unit and mutation test generation dispatch async jobs — poll session status with `olympix sessions --agent`; when a session completes, retrieve results via `olympix unit-testing --agent` or `olympix mutation-testing --agent` (`connect_session`).
-- Fuzz test generation does NOT support `--agent` mode. It runs in TUI mode only.
 
 ## Agent mode protocol
 
@@ -55,7 +53,6 @@ All supported commands use `--agent` for JSONL communication:
 olympix-results/               — formatted reports (created by skills)
   olympix-static.md            — static analysis findings
   mutation_test/               — mutation test metrics and reports
-  fuzz_test/                   — fuzz test reports
   unit_test/                   — unit test coverage and reports
   bugpocer_pocs/               — BugPocer exploit PoCs
   report.md                    — assembled final report

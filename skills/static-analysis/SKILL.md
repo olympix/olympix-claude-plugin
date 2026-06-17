@@ -5,12 +5,16 @@ description: >
   repo — runs in agent mode, verifies the repo builds first, returns findings
   synchronously via JSONL, and saves them to olympix-results/olympix-static.md.
   TRIGGER: "static analysis", "analyze", "run analyzer", "vulnerability scan", "olympix analyze"
-allowed-tools: Read, Glob, Grep, Bash, Write, Skill
+allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
 # Static Analysis
 
 Run Olympix static analysis on a Foundry- or Hardhat-based Solidity repository and save the results to `olympix-results/olympix-static.md`.
+
+**What this tool does:** fast pattern + dataflow scan with 100+ vulnerability detectors (reentrancy, access control, arithmetic, etc.). Runs in seconds, synchronously. It flags *suspected* issues — it does not confirm exploitability (that is BugPocer's job).
+
+**Where it fits in the flow:** `Static Analysis (you are here) → Unit Tests → Mutation Tests → BugPocer → Report`. Static is the recommended **first** step — cheapest, fastest, surfaces obvious issues before the heavier tools.
 
 ## Prerequisites
 
@@ -63,13 +67,13 @@ Output is a single JSONL line:
 {"event":"findings_ready","data":{"findings":[{"id":"...","title":"<vulnerability-slug>","severity":"High","description":"...","affected_code":"...","file_path":"...","line_number":0}]}}
 ```
 
-Each finding has: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`.
+Each finding may carry: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`. Only `title`, `description`, `file_path`, and `line_number` are guaranteed.
 
 **Field semantics on the agent path:**
 - `title` is the **vulnerability slug** (e.g. `reentrancy-eth`) — there is no separate detector field.
 - `severity` is `Low`, `Medium`, or `High`, derived from the detector metadata by slug (unknown slugs default to `Medium`). The field is **omitted from the JSON** when the metadata fetch fails (it is null and null fields are not serialized) — and older CLIs never emit it. Handle its absence gracefully.
-- `affected_code` is the highlighted source excerpt for the finding.
-- The shared finding payload also carries **default verdict noise that does NOT apply to static analysis** — `bugpocer_verdict`, `user_verdict`, and `effective_verdict` are `"n/a"` and `confidence_score` is `0` for every static-analysis finding. Ignore these fields here; they are only meaningful for BugPocer.
+- `affected_code` is the highlighted source excerpt — **but the dev agent build does NOT emit it.** When findings carry only `description`/`file_path`/`line_number`/`severity`/`title`, there is no source excerpt. Degrade gracefully: omit the "Affected code" block entirely rather than printing an empty fence, and pull the snippet from the file at `file_path:line_number` yourself only if the user later asks.
+- **Verdict-noise fields — NEVER surface these to the user.** The shared finding payload carries `bugpocer_verdict`, `user_verdict`, `effective_verdict` (all `"n/a"`) and `confidence_score` (`0`). They are meaningless for static analysis. Drop them silently — do NOT mention them, do NOT say you "ignored verdict noise", do NOT reference BugPocer at all in a static-analysis run. The user should never see the word "verdict" come out of static analysis.
 
 **If the workspace has no Solidity files**, the CLI emits an `error` event whose message starts with `No Solidity files found in workspace` — match on that prefix; there are two variants:
 ```json
@@ -113,7 +117,7 @@ Group and count findings by `severity` when the field is present; within each se
 #### {file path}:{line}
 
 - **Description:** {description}
-- **Affected code:**
+- **Affected code:** *(include this block ONLY when `affected_code` is present — the dev agent build omits it; never print an empty fence)*
 
   ```solidity
   {affected_code}
@@ -138,6 +142,17 @@ Tell the user:
 - That full results are saved in `olympix-results/olympix-static.md`
 - Highlight the most impactful findings (e.g. reentrancy, access control, fund-loss vectors)
 
+Do NOT mention verdict fields, confidence scores, or BugPocer here — see the field semantics above.
+
+### Step 5: Offer to Triage the Findings
+
+Static analysis flags *suspected* issues; it does not confirm them. Right after reporting, **proactively ask the user** (use `AskUserQuestion`) whether they want you to triage the findings — read each flagged location against the actual source, mark likely true vs false positives, and prioritize what to fix first.
+
+- **"Yes, triage them"** — for each finding (start with the highest-severity cluster), open `file_path:line_number`, read the surrounding code, and classify it as likely-real / likely-false-positive / needs-deeper-review with a one-line reason. Group by file so concentrated clusters (e.g. many reentrancy hits in one contract) are obvious.
+- **"No, just the list"** — stop here; the saved report is the deliverable.
+
+Make this offer every run — it is the natural next step after a scan, and the whole point of running the analyzer.
+
 ## CLI Options
 
 | Flag | Description |
@@ -160,7 +175,8 @@ Tell the user:
 | 1 | Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` | Must compile |
 | 2 | `olympix analyze -w . --agent` | Synchronous — waits for results |
 | 3 | Parse JSONL → `olympix-results/olympix-static.md` | — |
-| 4 | Report summary to user | — |
+| 4 | Report summary to user (no verdict/BugPocer talk) | — |
+| 5 | Offer to triage findings against source (`AskUserQuestion`) | Always offer |
 
 ## Common Issues
 

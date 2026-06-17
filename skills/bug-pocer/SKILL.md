@@ -14,6 +14,10 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and Q&A — is driven programmatically through JSONL.
 
+**What this tool does:** deep security analysis that attempts to **confirm** exploitability and produce proof-of-concept exploit code (PoCs) for real vulnerabilities — going beyond static analysis's *suspected* findings. Each finding carries a verdict (true/false positive) and, where confirmed, a runnable PoC. Heaviest and slowest tool; each new session incurs backend scan cost.
+
+**Where it fits in the flow:** `Static Analysis → Unit Tests → Mutation Tests → BugPocer (you are here) → Report`. Run last — it is the most expensive and benefits from the context the earlier steps surface.
+
 > **⛔ REQUIRED FIRST ACTION — do not skip:** before launching the CLI, you MUST ask the user whether to run a **full-repo scan** or a **diff scan** (only code changed vs a git ref). See [Step 1.5](#step-15-choose-scan-mode--full-repo-or-diff). The launch command in Step 2 differs based on the answer — launching without asking is a bug.
 >
 > **Exception — dispatched/background agent (e.g. from `full-run`):** if you are running as a background agent with no interactive user, do NOT ask anything. Use the scan mode handed to you by the caller (default: **full**), and never block on a question — a background agent has no user to prompt. The "ask the user" rule applies only to interactive runs.
@@ -135,12 +139,17 @@ rm -f .opix-bp-in .opix-bp-holder.pid
 Before driving the flow, **name the session** so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
 
 ```bash
-org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+# Portable repo identity — NO `sed -E`: BSD/macOS sed rejects the non-greedy `+?`
+# with "RE error: repetition-operator operand invalid". Use POSIX parameter expansion.
+url=$(git remote get-url origin 2>/dev/null); url=${url%.git}; org_repo=""
 short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$url" ]; then repo=${url##*/}; rest=${url%/*}; org=${rest##*[:/]}; org_repo="$org/$repo"; fi
 if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
 ```
 
 **Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}` and pass it in the `new_session` action's `data.title` below.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT ask — you have no user to prompt (same rule as the scan-mode question in Step 1.5). Use the session name passed to you **verbatim** as `{SESSION_TITLE}`. Never call `AskUserQuestion`; it blocks the whole run.
 
 The flow proceeds through these stages:
 
@@ -376,7 +385,15 @@ Tell the user:
 - How many findings by severity AND by verdict (BugPocer vs user-reviewed)
 - Highlight Critical and High findings with brief descriptions
 - PDF saved at `pdf_path`; PoCs saved at `output_path`; summary in `olympix-results/bugpocer_pocs/`
-- Offer to ask follow-up questions via Q&A
+
+Then **proactively offer to triage the findings** (use `AskUserQuestion`) — this is the standard closing step after every tool run:
+
+- **"Yes, triage them"** — for each finding (start with Critical/High), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `effective_verdict` (true vs false positive) with a one-line reason. Prioritize what to fix first. You can also drive the built-in Q&A loop (Step 6) for deeper questions.
+- **"No, just the findings"** — stop; the saved report + PoCs are the deliverable.
+
+Make this offer every run.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT make this offer — you have no user to prompt and it would block. Just return your results to the orchestrator; it offers triage to the user once you report back.
 
 ## Important Notes
 

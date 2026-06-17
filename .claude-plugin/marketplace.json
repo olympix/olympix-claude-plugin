@@ -9,7 +9,7 @@
     {
       "name": "olympix",
       "source": "./",
-      "description": "Run Olympix smart contract security tools from Claude Code — static analysis, mutation tests, fuzz tests, unit tests, and BugPocer exploit generation",
+      "description": "Run Olympix smart contract security tools from Claude Code — static analysis, mutation tests, unit tests, and BugPocer exploit generation",
       "category": "development"
     }
   ]

@@ -3,7 +3,7 @@ name: assemble-report
 description: >
   Use when the user wants all Olympix tool results assembled into an olympix-results
   directory with a final markdown report — collects static analysis, mutation tests,
-  unit tests, fuzz tests, and BugPocer findings into a structured deliverable.
+  unit tests, and BugPocer findings into a structured deliverable.
   Results can be downloaded directly via agent mode or provided manually.
   TRIGGER: "assemble report", "final report", "olympix report", "collect results", "deliverable"
 allowed-tools: Read, Glob, Grep, Bash, Write, Skill
@@ -43,9 +43,6 @@ olympix-results/
 ├── unit_test/
 │   ├── unit_test_results.md     # Unit test summary
 │   └── *.t.sol                  # Generated test files
-├── fuzz_test/
-│   ├── fuzz_results.md          # Fuzz test summary
-│   └── *.t.sol                  # Fuzz test files
 └── bugpocer_pocs/
     └── findings.md              # BugPocer findings
 ```
@@ -55,7 +52,7 @@ olympix-results/
 ### Step 1: Create Directory Structure
 
 ```bash
-mkdir -p olympix-results/{mutation_test,unit_test,fuzz_test,bugpocer_pocs}
+mkdir -p olympix-results/{mutation_test,unit_test,bugpocer_pocs}
 ```
 
 ### Step 2: Verify Static Analysis
@@ -128,14 +125,6 @@ Also available at `.opix/agent/<session-id>/findings.json`. Connecting also auto
 
 Parse and save to `olympix-results/bugpocer_pocs/findings.md` — the same path the `bug-pocer` skill writes, so re-assembly overwrites rather than duplicates.
 
-#### 3e. Fuzz Test Results (Manual Only)
-
-Fuzz tests do NOT support agent mode. If fuzz tests were run, ask the user to provide results from their email:
-
-> Fuzz test results can't be downloaded automatically. Please paste or forward the result email so I can extract metrics, or save attachments to `olympix-results/fuzz_test/`.
-
-**Determinism rule when an email is searched** (by the user, or via any mail tooling available): locate the result email by the **session ID (UUID)** — it is guaranteed unique. Never search by date or subject; both are ambiguous across runs.
-
 ### Step 4: Handle Missing Results
 
 For any tool that wasn't run or has no completed sessions:
@@ -157,8 +146,6 @@ Create `olympix-results/report.md`:
   - [Mutation Files](#mutation-files)
 - Unit Testing
   - [Unit Testing Files](#unit-testing-files)
-- Fuzz Testing
-  - [Fuzz Testing Files](#fuzz-testing-files)
 - BugPocer Scan Report
   - [Severity] finding_name (for each finding)
 - Static Analysis
@@ -197,18 +184,6 @@ Create `olympix-results/report.md`:
 ### Unit Testing Files
 
 [Link to unit_test/ directory]
-
----
-
-## Fuzz Testing
-
-| Contract | Attack Strategy | Paths | Feasible | Infeasible | Test Cases | Exploits |
-|----------|----------------|-------|----------|------------|------------|----------|
-| ... | ... | ... | ... | ... | ... | ... |
-
-### Fuzz Testing Files
-
-[Link to fuzz_test/ directory]
 
 ---
 
@@ -254,6 +229,5 @@ Tell the user:
 | Session still `InProgress` | Poll and wait, or mark "In progress" and offer to re-assemble later |
 | Session `Failed` | `olympix sessions --agent` does not carry `error_message` — get it from the `sessions_list` event during `mutation-testing`/`unit-testing --agent` retrieval, or from the `results_ready` "Generation failed: ..." message |
 | `--agent` flag rejected | CLI is pre-agent-mode — tell the user to run `olympix update`, then re-probe |
-| Fuzz tests have no agent-mode results | Ask the user to paste/forward the email or save attachments to `olympix-results/fuzz_test/` |
 | Static analysis not run | Run `static-analysis` skill first or skip the section |
 | BugPocer not run | Mark as "Not run" — it's optional |

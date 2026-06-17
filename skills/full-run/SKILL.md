@@ -2,7 +2,7 @@
 name: full-run
 description: >
   Use when the user wants a full Olympix security analysis — static analysis,
-  mutation tests, unit tests, BugPocer, and optionally fuzz tests. The long-running
+  unit tests, mutation tests, and BugPocer. The long-running
   tools run as BACKGROUND agents so the user can keep chatting with you while they
   run; you report as each finishes plus a periodic heartbeat.
   TRIGGER: "full run", "full-run", "run everything", "full scan", "run all tools"
@@ -11,7 +11,25 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, Agent, AskUserQuestion
 
 # Full Run (background)
 
-Run the full Olympix security analysis suite on a Foundry- or Hardhat-based Solidity repository. The fast, must-run-once setup happens up front; then each long-running tool is dispatched as a **background agent** so the user can keep talking to you while the scans run. You stay free to chat, relay updates as each tool finishes, and post a periodic heartbeat.
+`full-run` is the **orchestrator** — it does not contain tool logic of its own. It runs the fast setup once, then drives each underlying tool skill (`static-analysis`, `unit-test`, `mutation-test`, `bug-pocer`) in the right order, dispatching the long-running ones as **background agents** so the user can keep talking to you while the scans run. You stay free to chat, relay updates as each tool finishes, and post a periodic heartbeat.
+
+## The tools, and what each one does
+
+Present this plainly to the user whenever you ask which tools to run — do NOT use internal jargon ("kill score", "agent dispatch") without explaining it.
+
+```
+  Static Analysis  →   Unit Tests   →  Mutation Tests  →   BugPocer    →   Report
+  ───────────────      ──────────       ────────────       ─────────       ──────
+  find suspected       generate         measure how        deep scan →     assemble
+  vulnerabilities      tests + raise    well tests catch    confirmed       all results
+  (100+ detectors)     code coverage    real bugs           exploits/PoCs   into a report
+  seconds, sync        async job        async job           async job
+```
+
+- **Static Analysis** — fast scanner (100+ detectors: reentrancy, access control, arithmetic…). Flags *suspected* issues in seconds. Cheapest, run first.
+- **Unit Tests** — generates Foundry/Hardhat unit tests for the most critical contracts and reports the coverage gained.
+- **Mutation Tests** — injects small bugs ("mutants") into the code and checks whether the test suite catches them. The **kill score** = % of injected bugs the tests caught; a low score means weak tests.
+- **BugPocer** — deep security analysis that attempts to **confirm** exploitability and produce proof-of-concept exploits. Heaviest and slowest; incurs backend scan cost.
 
 ## Prerequisites
 
@@ -48,7 +66,7 @@ Read and follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` (auto-dete
 
 ### Step 2: Rank Contracts Once
 
-Identify the top 10 most critical contracts (read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md`). Reuse this ranking for mutation tests, unit tests, and fuzz tests — do NOT re-analyze per tool. The top 3 for fuzz are a subset of the top 10.
+Identify the top 10 most critical contracts (read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/contract-selection.md`). Reuse this ranking for unit tests and mutation tests — do NOT re-analyze per tool.
 
 ### Step 3: Run Static Analysis (fast, synchronous)
 
@@ -56,7 +74,7 @@ Identify the top 10 most critical contracts (read `${CLAUDE_PLUGIN_ROOT}/skills/
 olympix analyze -w . --agent
 ```
 
-Parse the `findings_ready` event, write `olympix-results/olympix-static.md`, and report the counts to the user immediately — this is their first result and arrives in seconds.
+Parse the `findings_ready` event, write `olympix-results/olympix-static.md`, and report the counts to the user immediately — this is their first result and arrives in seconds. Drop the verdict-noise fields silently (no "verdict"/BugPocer talk in static output — see the `static-analysis` skill). Then **offer to triage the static findings** against the source: you can do this while the background agents (dispatched next) run, so it costs the user no extra wait.
 
 ### Step 4: Choose a Session Name
 
@@ -85,12 +103,14 @@ Launch one background agent per long-running tool with the `Agent` tool, `run_in
 
 Pass each agent: the absolute repo path, the ranked contract list, and its session name. **Tell each agent to USE the session name you provide verbatim and NOT to ask for a name** — the user has already confirmed it here, and a background agent has no user to prompt.
 
-**Mutation agent** — prompt it to run the `mutation-test` skill flow:
+> **Background agents must NEVER call `AskUserQuestion` — for anything.** They have no user. That means: do not ask for a session name (use the one passed), do not ask BugPocer scan mode (use `{BUGPOCER_SCAN_MODE}`), and do **not** make the end-of-run "offer to triage" that each tool skill describes — triage is the orchestrator's job here (Phase 3), done once the agent reports back. The agent's only output is its structured result.
+
+**Mutation agent** — prompt it to run the `mutation-test` skill flow. **Skip its Steps 0–2 (auth, build, ranking) — Phase 1 already did them; use the ranked contract list passed to you, do not re-rank. Do not offer triage at the end — just return results.**
 - Dispatch: `printf '{"action":"new_session","data":{"title":"<base> [mutation]"}}\n{"action":"disconnect"}\n' | olympix generate-mutation-tests -w . -p path1 -p path2 ... --agent`
 - Record the session ID from `results_ready`, poll `olympix sessions --agent` until `Completed`/`Failed`, retrieve via `olympix mutation-testing --agent`, save to `olympix-results/mutation_test/`.
 - Return: session ID, name, kill score (killed/total), status, output path.
 
-**Unit agent** — prompt it to run the `unit-test` skill flow in full (coverage check, scaffold up to 10 templates, example tests, verify), then:
+**Unit agent** — prompt it to run the `unit-test` skill flow (skip auth — Phase 1 did it; use the ranked contract list passed to you; do not offer triage at the end). It still does the local scaffolding work: coverage check, scaffold up to 10 templates, example tests, verify. Then:
 - Dispatch: `printf '{"action":"new_session","data":{"title":"<base> [unit]"}}\n{"action":"disconnect"}\n' | olympix generate-unit-tests -w . -p <paths> --agent` (do NOT send `confirm_all` — it is invalid after dispatch and can kill the job).
 - Record the session ID, poll until `Completed`/`Failed`, retrieve via `olympix unit-testing --agent`, save to `olympix-results/unit_test/`.
 - Return: session ID, name, coverage, test count, status, output path. If a repo-wide stack-too-deep blocks coverage, return that as the status instead of dispatching.
@@ -119,7 +139,7 @@ When this `sleep` completes it re-invokes you. Post a heartbeat (see protocol) a
 
 ## Phase 3 — Monitoring protocol (while the user chats with you)
 
-- **An agent finishes (or fails):** immediately relay a one-line result — tool, session name, key metric, where saved. On failure, capture the reason and continue; never abort the other agents.
+- **An agent finishes (or fails):** immediately relay a one-line result — tool, session name, key metric, where saved. On failure, capture the reason and continue; never abort the other agents. Then **offer to triage that tool's results** (the standard closing step every tool does on its own): static → findings vs source, unit → coverage gaps, mutation → surviving mutants, BugPocer → verdicts vs source. The saved files in `olympix-results/` are enough to triage without re-running anything — and you can triage one tool while others are still running.
 - **The heartbeat `sleep` finishes:** post a status line per still-running agent in phase terms ("mutation: still running", "unit: done", "bugpocer: scanning"), then re-arm `sleep 900` if anything is still running.
 - **The user asks "status":** summarize the latest known state of every agent from what you have.
 - **All agents returned:** present the final summary (Step 6), then stop — do not arm another heartbeat.
@@ -142,26 +162,14 @@ Once every dispatched agent has returned:
 | Tool | Session (name / id) | Results | Status |
 |------|---------------------|---------|--------|
 | Static Analysis | — | {X} high, {Y} medium, {Z} low | Complete |
-| Mutation Tests | {name} / {id} | {score}% kill score ({killed}/{total}) | Complete |
 | Unit Tests | {name} / {id} | {coverage}% coverage, {passed} tests | Complete |
+| Mutation Tests | {name} / {id} | {score}% kill score ({killed}/{total}) | Complete |
 | BugPocer | {name} / {id or —} | {N} findings ({H} high, {M} medium, ...) | InitialScanCompleted / Skipped |
-| Fuzz Tests | {name} / {id} | — | Started (check email) |
 ```
 
 Tell the user:
-- All results (except fuzz) are saved in `olympix-results/`
+- All results are saved in `olympix-results/`
 - Run `/olympix:assemble-report` to compile the final report
-- Fuzz test results (if run) arrive via email
-
-## Step 7: Fuzz Tests (optional, after the rest)
-
-Ask the user if they want fuzz tests. If yes, from the same top-10 ranking take the top 3 and run (fuzz has **no** agent mode — results are email-only, so this is a quick foreground dispatch, not a background agent):
-
-```bash
-olympix generate-fuzz-tests -w . -p path1 -p path2 -p path3
-```
-
-Record the session ID; tell the user results arrive via email only.
 
 ## Important Notes
 
@@ -170,7 +178,6 @@ Record the session ID; tell the user results arrive via email only.
 - **Name every session** and pass the title in `new_session` so the user can find them in the CLI later; always ask the user, suggesting a default.
 - **Never claim or judge durations** — see the reporting rules above.
 - **Don't stop on partial failure** — note a failed tool and continue with the others.
-- **Fuzz tests are email-only** — they do NOT support `--agent`.
 
 ## Common Issues
 

@@ -14,6 +14,10 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Edit, Skill, AskUserQuestion
 
 Prepare a Foundry- or Hardhat-based Solidity repository for Olympix unit test generation by scaffolding test templates, verifying forge coverage compatibility, and running the generator via agent mode.
 
+**What this tool does:** generates Foundry/Hardhat unit tests for the most critical contracts and reports the **code coverage** gained (lines/branches exercised). More coverage = more of the contract's behavior is actually tested.
+
+**Where it fits in the flow:** `Static Analysis → Unit Tests (you are here) → Mutation Tests → BugPocer → Report`. Run before mutation testing — the generated tests are what mutation testing then scores.
+
 ## Prerequisites
 
 - Foundry (`forge`) or Hardhat (`npx hardhat`) installed
@@ -280,12 +284,17 @@ Verify the contracts you scaffolded appear in the list. The file is also saved t
 Name the session so the user can find it later in `olympix` (`olympix sessions`, the TUI session lists). Pick a suggested default from the repo identity:
 
 ```bash
-org_repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+# Portable repo identity — NO `sed -E`: BSD/macOS sed rejects the non-greedy `+?`
+# with "RE error: repetition-operator operand invalid". Use POSIX parameter expansion.
+url=$(git remote get-url origin 2>/dev/null); url=${url%.git}; org_repo=""
 short_sha=$(git rev-parse --short HEAD 2>/dev/null)
+if [ -n "$url" ]; then repo=${url##*/}; rest=${url%/*}; org=${rest##*[:/]}; org_repo="$org/$repo"; fi
 if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha}"; else basename "$(pwd)"; fi
 ```
 
 **Ask the user to confirm or change it**, presenting the suggested default (use `AskUserQuestion` with the suggested default as the first option, or a plain prompt that states the suggestion). The user may accept the suggestion or supply their own. Record the confirmed name as `{SESSION_TITLE}`.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT ask — you have no user to prompt. Use the session name passed to you **verbatim** as `{SESSION_TITLE}` and skip straight to Step 12. Never call `AskUserQuestion`; it blocks the whole run.
 
 ### Step 12: Dispatch Unit Test Generation
 
@@ -368,6 +377,17 @@ Tell the user:
 - Total tests generated and pass rate
 - Results saved in `olympix-results/unit_test/unit_test_results.md`
 
+### Step 16: Offer to Triage the Coverage Gaps
+
+Right after reporting, **proactively ask** (use `AskUserQuestion`) whether to triage what is still uncovered.
+
+- **"Yes, triage them"** — for each contract still below full coverage, identify the uncovered functions/branches, explain which untested paths are risky (fund-moving / access-control / external-call branches), and offer to write targeted tests for the high-value gaps.
+- **"No, just the list"** — stop; the saved report is the deliverable.
+
+Make this offer every run.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT make this offer — you have no user to prompt and it would block. Just return your results to the orchestrator; it offers triage to the user once you report back.
+
 ## Quick Reference
 
 | Step | Command / Action | Gate |
@@ -388,6 +408,7 @@ Tell the user:
 | 13 | Poll `olympix sessions --agent` | Until `Completed`/`Failed` |
 | 14 | `olympix unit-testing --agent` (connect_session) | Retrieve results |
 | 15 | Save results + report to user | — |
+| 16 | Offer to triage coverage gaps (`AskUserQuestion`) | Always offer |
 
 ## Important Notes
 

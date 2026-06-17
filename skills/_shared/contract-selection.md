@@ -25,5 +25,4 @@
 | Tool | Max Contracts |
 |------|---------------|
 | Mutation tests | 10 (plugin convention — the CLI itself accepts up to 100 `-p` paths) |
-| Fuzz tests | 3 |
 | Unit tests | 10 (test files total, including pre-existing Opix files) |
