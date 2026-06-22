@@ -264,7 +264,7 @@ If you intend to continue with Q&A, PDF export, or PoC export (Steps 6-8), recon
 **Expected output:**
 ```
 {"event":"progress","data":{"message":"Connected to session <id>. Fetching findings..."}}
-{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["ask_question","generate_pdf","save_pocs","save_findings_md","disconnect"]}
+{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["set_verdict","ask_question","generate_pdf","save_pocs","save_findings_md","disconnect"]}
 ```
 
 Each finding carries:
@@ -314,6 +314,33 @@ Send `disconnect` when done.
 - **Never answer "none" just because `user_verdict` is `unreviewed`.** If asked "what were the TP/FPs",
   report by `effective_verdict`, and state explicitly whether each is a human verdict or BugPocer's
   unreviewed call. Example: "3 TP / 2 FP per BugPocer (unreviewed); 0 reviewed by a user."
+
+### Step 6.5: Set verdicts (built-in, optional)
+
+Record a human verdict on findings — confirming or overriding BugPocer's automated call — in bulk.
+This sets the `user_verdict` / `user_verdict_reason` fields (the human-override fields from Step 5), so
+`effective_verdict` and **every default-filter export (PDF, PoCs, split markdown) reflect your review**.
+Set verdicts **before** `generate_pdf` (Step 7) if you want the report to show them.
+
+Valid from the `findings_ready` state (same as `generate_pdf` / `save_pocs`). Address findings by the
+`id` from Step 5. Send one command with all the verdicts you want to set:
+
+```json
+{"action":"set_verdict","data":{"verdicts":[{"finding_id":"<id>","verdict":true,"reason":"confirmed reentrancy"},{"finding_id":"<id>","verdict":false},{"finding_id":"<id>","verdict":null}]}}
+```
+
+- `verdict`: `true` = true positive, `false` = false positive, `null` (or omitted) = clear back to unreviewed (also clears the reason).
+- `reason`: optional free-text justification.
+
+Wait for a `verdict_set` event with one result per entry:
+
+```json
+{"event":"verdict_set","data":{"session_id":"<id>","results":[{"finding_id":"<id>","status":"set","verdict":true},{"finding_id":"<bad>","status":"error","message":"unknown finding id '<bad>'"}]}}
+```
+
+`status:"set"` means the verdict was applied; `status:"error"` (with `message`) means that one entry was
+skipped (e.g. unknown id, or a finding with no server id) — the rest still apply. Re-fetch with
+`fetch_findings` to see the updated `user_verdict` / `effective_verdict`.
 
 ### Step 7: Export PDF report (built-in)
 
@@ -388,7 +415,7 @@ Tell the user:
 
 Then **proactively offer to triage the findings** (use `AskUserQuestion`) — this is the standard closing step after every tool run:
 
-- **"Yes, triage them"** — for each finding (start with Critical/High), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `effective_verdict` (true vs false positive) with a one-line reason. Prioritize what to fix first. You can also drive the built-in Q&A loop (Step 6) for deeper questions.
+- **"Yes, triage them"** — for each finding (start with Critical/High), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `effective_verdict` (true vs false positive) with a one-line reason. **Record each confirmed verdict with `set_verdict` (Step 6.5)** so the exported PDF/PoCs/markdown reflect your review — then regenerate the PDF (Step 7) for an updated report. Prioritize what to fix first. You can also drive the built-in Q&A loop (Step 6) for deeper questions.
 - **"No, just the findings"** — stop; the saved report + PoCs are the deliverable.
 
 Make this offer every run.
@@ -406,10 +433,11 @@ Make this offer every run.
   `{"event":"session_killed","data":{"session_id":"<id>","was_running":true|false}}` and exits —
   `was_running: false` means the session was not running or had already completed.
 - **Killed sessions:** Reconnecting to a Killed session does NOT return findings. The CLI emits an `error` event — `"Failed to retrieve session data. Session may be Killed or inaccessible."` — and exits, or times out with `"Timed out connecting to session '<id>'. Session may be Killed, expired, or unreachable."`. Report this to the user instead of retrying.
-- **PDF/PoC export are post-findings actions:** `generate_pdf` and `save_pocs` are only valid after a
-  `findings_ready` event (i.e. on a completed session). They re-emit the same action set so you can chain them.
+- **PDF/PoC export and `set_verdict` are post-findings actions:** `generate_pdf`, `save_pocs`, and `set_verdict`
+  are only valid after a `findings_ready` event (i.e. on a completed session). They re-emit the same action set so you can chain them.
 - **Verdicts are two independent fields:** `bugpocer_verdict` (automated) and `user_verdict` (human override,
   `unreviewed` until set). Always report both; collapse to `effective_verdict` only for a single final call.
+  Set or override `user_verdict` with the `set_verdict` action (Step 6.5).
 - **Security questions are not optional noise:** answer them from the repo. Skipping degrades scan quality.
 
 ## Common Issues
