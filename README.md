@@ -134,7 +134,7 @@ All results auto-persist to `.opix/agent/` inside the workspace directory.
 | Problem | Solution |
 |---------|----------|
 | `olympix` not found | Install CLI: https://olympix.github.io/installation/ |
-| Auth expired | Run `olympix:auth` or `! olympix login -e your@email.com` |
+| Auth expired | Log in from a **separate terminal** (or before starting Claude Code) with `olympix login` (interactive — enter the emailed code; do **not** run it via `!`) |
 | `forge build` fails | Install dependencies per project README |
 | Stack-too-deep | Some contracts incompatible with unit test coverage mode |
 | `--agent` flag rejected / unknown option | Olympix CLI too old — run `olympix update` |

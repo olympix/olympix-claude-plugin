@@ -66,9 +66,14 @@ Decision rule, in order:
 
 ### Step 2: Instruct User to Login
 
-Tell the user:
+Olympix login is **interactive**: it emails a verification code that must be typed at a live prompt. It **cannot** be run with the `!` prefix inside this Claude Code session — `!` runs the command non-interactively, so the "Enter code" prompt is never answered and login fails with `Field code is required`. **Never tell the user to run `! olympix login`.**
 
-> Run `! olympix login -e your@email.com` to authenticate. You'll receive a verification code via email — enter it when prompted.
+Instead, tell the user to log in **outside** this session — either option works:
+
+- **Open a new terminal** (leave Claude Code running), run `olympix login`, and follow the prompts: enter your account email, then the verification code emailed to you.
+- **Or quit Claude Code, run `olympix login` in your terminal, then reopen Claude Code** once logged in.
+
+Do **not** suggest, guess, or fill in an email address. `olympix login` prompts for the email itself; the user types their own (or passes `-e <their-email>` if they prefer). Never substitute a placeholder like `your@email.com` with a guessed address.
 
 Wait for the user to confirm they're logged in.
 
@@ -82,10 +87,12 @@ olympix org-seats
 
 Decision rule:
 - **Seat info is shown** → authentication is complete. Proceed.
-- **Command errors or shows no seats** → login did not take. Ask the user to re-run `! olympix login -e your@email.com` and re-run this step. **HARD STOP** if it cannot be made to succeed — downstream skills require auth.
+- **Command errors or shows no seats** → login did not take. Ask the user to re-run `olympix login` in a separate terminal (not via `!`, no guessed email) and re-run this step. **HARD STOP** if it cannot be made to succeed — downstream skills require auth.
 
 ## Important Notes
 
-- This skill is **interactive-only** — it never automates the login or reads the verification code. The user enters the code at the `olympix login` prompt.
+- This skill is **interactive-only** — it never automates the login or reads the verification code. The user runs `olympix login` themselves in a real terminal (a new terminal alongside Claude Code, or after reopening it) and enters the emailed code at the prompt.
+- **Never** run or suggest `! olympix login`; the `!` prefix runs non-interactively and the code prompt fails with `Field code is required`.
+- **Never** guess or fill in the user's email — `olympix login` prompts for it.
 - Token expiry is read from the JWT `exp` claim in `~/.opix/config.json`; a missing or malformed config is treated as unauthenticated.
 - An expired access token is NOT the same as being logged out: while `refreshToken`/`refreshExpiresAt` are valid, the CLI refreshes the session automatically on the next command.
