@@ -233,16 +233,19 @@ Send `skip_docs` or `submit_docs` with notes/links:
 
 CLI exits with code 0. The backend scan starts processing.
 
-### Step 4: Wait for Scan Completion (non-blocking)
+### Step 4: Wait for Scan Completion (poll in the foreground)
 
-The scan runs **asynchronously** on the backend — there is nothing to wait on interactively. Once
-`validation_submitted` arrives the CLI has already exited; do NOT hold a subprocess open waiting for
-an answer.
+The scan runs **asynchronously** on the backend — once `validation_submitted` arrives the bug-pocer
+CLI has already exited, so do NOT hold that subprocess open waiting for an answer. You poll separately
+with `olympix sessions --agent`.
 
 **Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="bug_pocer"`. The loop matches on `id`, reads `status`, and breaks on `InitialScanCompleted` (BugPocer never reports `Completed`) or `Killed`, using plain string equality (a hand-rolled `case "$ST"` with escaped quotes never matches and hangs the run for ~1 hour).
 
-Keep doing other work between polls rather than blocking. Do not tell the user how long it should take
-or call a long scan abnormal — scans routinely take much longer than expected.
+Each call to that loop blocks ~7 min in the **foreground** and prints the status; if it is not
+terminal, run the same call again (the loop file explains the re-run rule, and the one main-loop-only
+exception for keeping a direct user's chat free). Do NOT background the loop and re-read its log every
+few seconds — that spins and spams "still running" — and do not narrate each poll. Do not tell the
+user how long it should take or call a long scan abnormal — scans routinely take much longer than expected.
 
 ### Step 5: Retrieve Findings
 
@@ -300,7 +303,9 @@ After receiving findings, ask questions about them:
 {"action":"ask_question","data":{"question":"What is the most critical finding?"}}
 ```
 
-Flow: `progress` "Question sent" → `qa_waiting` → `question_answered` with `answer` field.
+Flow: `progress` "Question sent" → `qa_waiting` → `question_answered` with `answer` field. Wait for
+`question_answered` using the recipe in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md`
+(`WANT='"event":"question_answered"'`, foreground, re-run on `WAIT_TIMEOUT`; do NOT background it).
 
 After `question_answered`, the valid actions are only `ask_question`, `fetch_findings`, and `disconnect` — `generate_pdf` and `save_pocs` are NOT accepted here; send `fetch_findings` to re-enter `findings_ready` first, then export.
 
@@ -323,9 +328,11 @@ Use BugPocer's own PDF generator instead of hand-rolling one. After `findings_re
 {"action":"generate_pdf"}
 ```
 
-Wait for `{"event":"pdf_generated","data":{"session_id":"<id>","pdf_path":"<abs-path>"}}`.
-On failure an `error` event is emitted; report it and continue. Move/copy the file into
-`olympix-results/` if desired.
+Then wait for the result with the exact recipe in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md`,
+setting `WANT='"event":"pdf_generated"'` — a bounded FOREGROUND wait, re-run on `WAIT_TIMEOUT`; do NOT
+background it or hand-roll a wait (PDF generation is heavy and slow, so it may take several windows).
+Success event: `{"event":"pdf_generated","data":{"session_id":"<id>","pdf_path":"<abs-path>"}}`.
+On `WAIT_ERROR` (an `error` event) report it and continue. Move/copy the file into `olympix-results/` if desired.
 
 ### Step 8: Re-export PoCs (built-in, optional)
 
@@ -336,7 +343,9 @@ them. Export every finding's proof-of-concept to disk via the built-in exporter.
 {"action":"save_pocs"}
 ```
 
-Wait for `{"event":"pocs_saved","data":{"session_id":"<id>","saved_count":N,"output_path":"<dir>"}}`.
+Then wait with the `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md` recipe, `WANT='"event":"pocs_saved"'`
+(foreground, re-run on `WAIT_TIMEOUT`; never background). Success event:
+`{"event":"pocs_saved","data":{"session_id":"<id>","saved_count":N,"output_path":"<dir>"}}`.
 This writes one PoC file per finding (named by unit + vulnerability). Report the count and path.
 
 PoC export applies the **CLI default filter** (true positives + unverified, all severities; false
@@ -353,8 +362,10 @@ unverified; false positives excluded). Send:
 {"action":"save_findings_md"}
 ```
 
-Wait for `{"event":"findings_saved","data":{"session_id":"<id>","files":[{"category":"True Positives","count":N,"path":"<abs-path>"},...]}}`.
-On failure an `error` event is emitted (e.g. no findings match the default filter); report it and continue.
+Then wait with the `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md` recipe, `WANT='"event":"findings_saved"'`
+(foreground, re-run on `WAIT_TIMEOUT`; never background). Success event:
+`{"event":"findings_saved","data":{"session_id":"<id>","files":[{"category":"True Positives","count":N,"path":"<abs-path>"},...]}}`.
+On `WAIT_ERROR` (e.g. no findings match the default filter) report it and continue.
 Move/copy the files into `olympix-results/` if desired.
 
 ### Step 9: Save Results

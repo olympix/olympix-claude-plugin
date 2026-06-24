@@ -19,11 +19,20 @@ Each session object is `{"id":"<uuid>","title":...,"status":"<Status>","created_
 
 ## The loop — copy verbatim, set the two variables
 
+**Run this in the FOREGROUND with Bash `timeout: 600000`. It blocks ~7 min (gentle 90s
+polls) and then prints `status: <X>`. If `<X>` is NOT one of the four terminal statuses
+below, run this EXACT same call again.** Do NOT launch it with `run_in_background`, do NOT
+add your own `sleep`s or log/liveness checks between calls, and do NOT narrate each poll —
+one status line when it finally resolves is enough. Backgrounding the loop and then
+re-reading the log every few seconds is the #1 cause of a subagent spinning and spamming
+"still running": the loop below already does the waiting for you, so just block on it.
+
 ```bash
 SESSION_ID="<the session id you recorded>"
 ARRAY_KEY="mutation_tests"   # one of: mutation_tests | unit_tests | bug_pocer
 
-for i in $(seq 1 80); do
+ST=Unknown
+for i in $(seq 1 6); do
   ST=$(olympix sessions --agent 2>/dev/null | python3 -c '
 import sys, json
 sid, key = sys.argv[1], sys.argv[2]
@@ -51,19 +60,27 @@ print(status)
     break
   fi
 
-  sleep 90
+  [ "$i" -lt 6 ] && sleep 90   # ~7 min window; no trailing sleep after the last poll
 done
 
-echo "final status: $ST"
+echo "status: $ST"   # terminal (Completed/Failed/InitialScanCompleted/Killed) -> proceed; else run this SAME call again
 ```
 
 ## Notes
 
 - Set `ARRAY_KEY` to the array for the tool you dispatched; the break list above already covers every
   terminal status, so the single loop works for all three tools.
-- If `ST` stays `NotFound` across several polls, the session id is wrong or auth expired — re-run the
+- **One call is one ~7-min window, not the whole wait.** A non-terminal `status:` line means the scan
+  is still going — run the SAME call again. A scan can need many windows (sometimes an hour+); that is
+  normal. Re-running the bounded FOREGROUND call keeps you blocked-and-waiting WITHOUT spinning.
+  **Inside a dispatched subagent (e.g. from `full-run`) you MUST poll in the foreground:** a subagent
+  that backgrounds the poll and yields is not reliably re-invoked when the background task finishes
+  (unlike the main loop), so it returns early or spins re-reading the log. *Only* on the main
+  interactive loop may you instead background this loop and STOP — you'll be re-invoked on completion —
+  to keep the user's chat free; even then, never re-check it yourself between.
+- If `ST` stays `NotFound` across several windows, the session id is wrong or auth expired — re-run the
   `auth` skill and re-check the id; do not keep polling blindly.
 - `Failed` / `Killed` are terminal — stop and read `error_message` (reconnect to retrieve it); do not
   treat them as "still running".
-- The 90s cadence and `seq 1 80` bound are internal mechanics — never present them to the user as an
+- The 90s cadence and ~7-min window are internal mechanics — never present them to the user as an
   ETA, and never call a long scan abnormal.
