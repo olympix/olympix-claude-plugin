@@ -209,7 +209,11 @@ After all validation items, security questions arrive one at a time:
 Deterministic answering rule, in order:
 1. If a `suggested_answers` option matches what the code shows → `select_answer` with `{"answer_id":"<id>"}`.
 2. Else if you know the answer from the code but no option fits → `custom_answer` with `{"answer":"<text>"}`.
-3. Only `skip_question` when the repo genuinely does not determine it AND `is_required` is false.
+3. Else — the repo genuinely does not determine it — **ask the user** via `AskUserQuestion`, then answer the CLI from their reply. Do this for **every** unknown, required or not. Do NOT `skip_question` just because the code is silent. See "Escalating unknowns" below.
+
+**Escalating unknowns to the user:** put the `question_text` as the `AskUserQuestion` question and map each `suggested_answers` entry to an option (option label = its `label`); the user can also pick "Other" to supply free text. Translate their reply back to a CLI action — `select_answer` `{"answer_id":"<id>"}` if they chose a suggested option, else `custom_answer` `{"answer":"<their text>"}`. **Write that action immediately after they reply:** the CLI's 300s stdin timeout (Step 2) keeps ticking while you wait on the user — a single ask left unanswered past 300s makes the CLI emit `{"event":"error","data":{"message":"Timeout waiting for input"}}`. When several unknowns arrive close together, batch up to 4 into one `AskUserQuestion` call to cut round-trips, but each pending CLI question must still be answered inside its own 300s window.
+
+> **Dispatched/background agent (e.g. from `full-run`):** do NOT ask — there is no user to prompt (same rule as Steps 1.5, 3, 10). Fall back to the old behavior: `skip_question` when the repo does not determine it and `is_required` is false; otherwise `custom_answer` with your best read of the code. Never call `AskUserQuestion`; it blocks the whole run.
 
 **Follow-up questions (`is_follow_up: true`):** selecting an answer whose `show_follow_up_ids` is
 non-empty causes the CLI to emit one or more follow-up `security_question` events (linked by
@@ -421,7 +425,7 @@ Make this offer every run.
   `findings_ready` event (i.e. on a completed session). They re-emit the same action set so you can chain them.
 - **Verdicts are two independent fields:** `bugpocer_verdict` (automated) and `user_verdict` (human override,
   `unreviewed` until set). Always report both; collapse to `effective_verdict` only for a single final call.
-- **Security questions are not optional noise:** answer them from the repo. Skipping degrades scan quality.
+- **Security questions are not optional noise:** answer them from the repo. When the repo is silent, ask the user (interactive runs) rather than skipping — skipping degrades scan quality. Background/dispatched agents have no user, so they skip non-required unknowns instead.
 
 ## Common Issues
 
