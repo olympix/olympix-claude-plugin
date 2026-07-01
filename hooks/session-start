@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# python3 is required for JSON escaping and JWT decoding. If it is missing,
+# emit a minimal valid hook payload and exit cleanly so session start never breaks.
+if ! command -v python3 >/dev/null 2>&1; then
+    cat <<'ENDJSON'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "Olympix Claude Plugin active. (python3 not found — status checks skipped)"
+  }
+}
+ENDJSON
+    exit 0
+fi
+
+escape_for_json() {
+    printf '%s' "$1" | python3 -c "import json,sys; sys.stdout.write(json.dumps(sys.stdin.read())[1:-1])"
+}
+
+context="Olympix Claude Plugin active."$'\n'
+
+# Check Olympix CLI
+if command -v olympix &>/dev/null || [ -x "$HOME/.opix/bin/olympix" ]; then
+    context+="  CLI: installed"$'\n'
+else
+    context+="  CLI: MISSING — install from https://olympix.github.io/installation/"$'\n'
+fi
+
+# Check authentication
+AUTH_STATUS=$(python3 -c "
+import json, os, sys, time, base64, datetime
+try:
+    config = json.load(open(os.path.expanduser('~/.opix/config.json')))
+    token = config.get('sessionToken') or config.get('userToken')
+    if not token:
+        print('NOT LOGGED IN')
+        sys.exit(0)
+    payload = token.split('.')[1]
+    payload += '=' * (-len(payload) % 4)
+    exp = json.loads(base64.urlsafe_b64decode(payload)).get('exp', 0)
+    if exp >= time.time():
+        print('authenticated')
+        sys.exit(0)
+    # Access token expired — the CLI may still auto-refresh via the refresh token.
+    # refreshExpiresAt is an ISO-8601 string OR a Unix-epoch-MILLISECONDS number
+    # (VSCode-written configs) — handle both.
+    ref_exp = config.get('refreshExpiresAt', '')
+    try:
+        if isinstance(ref_exp, (int, float)):
+            ref_dt = datetime.datetime.fromtimestamp(ref_exp / 1000, datetime.timezone.utc)
+        else:
+            ref_dt = datetime.datetime.fromisoformat(ref_exp.replace('Z', '+00:00'))
+        ok = bool(config.get('refreshToken')) and ref_dt > datetime.datetime.now(datetime.timezone.utc)
+    except Exception:
+        ok = False
+    print('REFRESHABLE' if ok else 'EXPIRED')
+except Exception:
+    print('NOT LOGGED IN')
+" 2>/dev/null || echo "NOT LOGGED IN")
+
+case "$AUTH_STATUS" in
+    authenticated) context+="  Auth: authenticated"$'\n' ;;
+    REFRESHABLE)   context+="  Auth: authenticated (access token expired, CLI will auto-refresh)"$'\n' ;;
+    EXPIRED)       context+="  Auth: EXPIRED — run olympix:auth"$'\n' ;;
+    *)             context+="  Auth: NOT LOGGED IN — run olympix:auth"$'\n' ;;
+esac
+
+# Check Forge
+if command -v forge &>/dev/null; then
+    context+="  Forge: installed"$'\n'
+else
+    context+="  Forge: MISSING — install from https://getfoundry.sh"$'\n'
+fi
+
+context+=$'\n'"  Skills:"$'\n'
+context+="    olympix:full-run — Run all Olympix tools on a Foundry repo"$'\n'
+context+="    olympix:static-analysis — Run vulnerability scanner"$'\n'
+context+="    olympix:mutation-test — Generate mutation tests"$'\n'
+context+="    olympix:fuzz-test — Generate fuzz tests"$'\n'
+context+="    olympix:unit-test — Generate unit tests"$'\n'
+context+="    olympix:bug-pocer — Launch BugPocer security analysis"$'\n'
+context+="    olympix:assemble-report — Collect results into a deliverable report"$'\n'
+context+="    olympix:auth — Check/refresh CLI authentication"
+
+escaped=$(escape_for_json "$context")
+
+cat <<ENDJSON
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "$escaped"
+  }
+}
+ENDJSON
