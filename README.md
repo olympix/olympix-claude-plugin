@@ -116,6 +116,7 @@ This will:
 | `olympix:full-run` | Run all Olympix tools on a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner |
 | `olympix:mutation-test` | Generate mutation tests for top 10 contracts |
+| `olympix:fuzz-test` | Generate fuzz tests for top 3 contracts (run on demand; not part of `full-run`) |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
 | `olympix:bug-pocer` | Run BugPocer security analysis (fully automated) |
 | `olympix:assemble-report` | Collect results into `olympix-results/report.md` |

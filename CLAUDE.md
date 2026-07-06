@@ -9,6 +9,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 | `olympix:full-run` | User wants a complete security analysis of a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner only |
 | `olympix:mutation-test` | Generate mutation tests (top 10 contracts by criticality) |
+| `olympix:fuzz-test` | Generate fuzz tests (top 3 contracts — compute-heavy) |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
 | `olympix:bug-pocer` | Run BugPocer security analysis (fully automated via agent mode) |
 | `olympix:assemble-report` | Collect all results into olympix-results/report.md |
@@ -27,7 +28,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - Consistent casing: "BugPocer" (not "BugPoCer"). Exception: CLI-generated artifacts keep their original casing (e.g. the exported PDF `BugPoCer_Scan_Report*.pdf` and its "BugPoCer ... Report" headings) — do not rename them.
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.
-- Static analysis runs synchronously. Unit and mutation test generation dispatch async jobs — poll session status with `olympix sessions --agent`; when a session completes, retrieve results via `olympix unit-testing --agent` or `olympix mutation-testing --agent` (`connect_session`).
+- Static analysis runs synchronously. Unit, mutation, and fuzz test generation dispatch async jobs — poll session status with `olympix sessions --agent`; when a session completes, retrieve results via `olympix unit-testing --agent` / `olympix mutation-testing --agent` (`connect_session`), or `olympix connect-fuzz-session -s <id> --agent` for fuzz (session id is the `-s` flag, not a `connect_session` action).
 
 ## Agent mode protocol
 
@@ -49,10 +50,12 @@ All supported commands use `--agent` for JSONL communication:
   unit-tests/results.json      — dispatch receipt at dispatch; full UT results (coverage) written at retrieval
   mutation-tests/sessions.json — MT session list
   mutation-tests/results.json  — dispatch receipt at dispatch; full MT results (kill scores) written at retrieval
+  fuzz-tests/results.json      — full fuzz results summary, written at retrieval (connect-fuzz-session)
 
 olympix-results/               — formatted reports (created by skills)
   olympix-static.md            — static analysis findings
   mutation_test/               — mutation test metrics and reports
+  fuzz_test/                   — fuzz test summary + PDF report
   unit_test/                   — unit test coverage and reports
   bugpocer_pocs/               — BugPocer exploit PoCs
   report.md                    — assembled final report
