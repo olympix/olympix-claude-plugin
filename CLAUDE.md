@@ -51,12 +51,13 @@ All supported commands use `--agent` for JSONL communication:
   unit-tests/results.json      — dispatch receipt at dispatch; full UT results (coverage) written at retrieval
   mutation-tests/sessions.json — MT session list
   mutation-tests/results.json  — dispatch receipt at dispatch; full MT results (kill scores) written at retrieval
-  fuzz-tests/results.json      — full fuzz results summary, written at retrieval (connect-fuzz-session)
+  fuzz-tests/results.json      — full fuzz results summary, written at retrieval (connect-fuzz-session);
+                                 tests_path points at the downloaded generated test files
 
 olympix-results/               — formatted reports (created by skills)
   olympix-static.md            — static analysis findings
   mutation_test/               — mutation test metrics and reports
-  fuzz_test/                   — fuzz test summary + PDF report
+  fuzz_test/                   — fuzz test summary + generated test files (tests/) + PDF report
   unit_test/                   — unit test coverage and reports
   bugpocer_pocs/               — BugPocer exploit PoCs
   report.md                    — assembled final report
