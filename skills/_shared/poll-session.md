@@ -15,6 +15,7 @@ Each session object is `{"id":"<uuid>","title":...,"status":"<Status>","created_
 |-----------|------|--------|
 | `mutation_tests` | `Completed` | `Failed` |
 | `unit_tests` | `Completed` | `Failed` |
+| `fuzz_tests` | `Completed` | `Failed`, `Killed` (not retrievable) |
 | `bug_pocer` | `InitialScanCompleted` | `Killed` (not retrievable) |
 
 ## The loop — copy verbatim, set the two variables
@@ -29,7 +30,7 @@ re-reading the log every few seconds is the #1 cause of a subagent spinning and 
 
 ```bash
 SESSION_ID="<the session id you recorded>"
-ARRAY_KEY="mutation_tests"   # one of: mutation_tests | unit_tests | bug_pocer
+ARRAY_KEY="mutation_tests"   # one of: mutation_tests | unit_tests | fuzz_tests | bug_pocer
 
 ST=Unknown
 for i in $(seq 1 6); do
@@ -69,7 +70,7 @@ echo "status: $ST"   # terminal (Completed/Failed/InitialScanCompleted/Killed) -
 ## Notes
 
 - Set `ARRAY_KEY` to the array for the tool you dispatched; the break list above already covers every
-  terminal status, so the single loop works for all three tools.
+  terminal status, so the single loop works for all four tools.
 - **One call is one ~7-min window, not the whole wait.** A non-terminal `status:` line means the scan
   is still going — run the SAME call again. A scan can need many windows (sometimes an hour+); that is
   normal. Re-running the bounded FOREGROUND call keeps you blocked-and-waiting WITHOUT spinning.

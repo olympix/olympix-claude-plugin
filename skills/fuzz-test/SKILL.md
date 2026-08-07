@@ -4,8 +4,10 @@ description: >
   Use when the user wants Olympix fuzz test generation run on a Foundry- or Hardhat-based
   Solidity repo via agent mode — verifies the repo builds, selects the most critical
   contracts, dispatches the fuzz job, waits for completion, then reconnects to retrieve
-  the results summary, the generated test files and (optionally) a PDF report.
-  TRIGGER: "fuzz tests", "fuzz test", "generate fuzz tests", "fuzzing", "fuzz-test"
+  the results summary, the generated test files and (optionally) a PDF report. Can also stop
+  a running fuzz session.
+  TRIGGER: "fuzz tests", "fuzz test", "generate fuzz tests", "fuzzing", "fuzz-test",
+  "kill fuzz session", "stop fuzz", "cancel fuzz"
 allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
@@ -29,12 +31,15 @@ Fuzz agent mode requires a recent CLI. Do **not** probe with `--help | grep -- -
 
 ```bash
 if ! command -v olympix >/dev/null 2>&1 && [ ! -x "$HOME/.opix/bin/olympix" ]; then echo NOT_INSTALLED;
+elif olympix kill-fuzz-session --help >/dev/null 2>&1; then echo AGENT_MODE_WITH_KILL;
 elif olympix connect-fuzz-session --help >/dev/null 2>&1; then echo AGENT_MODE; else echo LEGACY_CLI; fi
 ```
 
 If `NOT_INSTALLED`, **HARD STOP** — tell the user to install the Olympix CLI from https://olympix.github.io/installation/ and rerun this skill.
 
 If `LEGACY_CLI` (no `connect-fuzz-session` command), the CLI predates fuzz agent mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if it still lacks the command.
+
+If `AGENT_MODE` (no `kill-fuzz-session` command), everything in this skill works **except** "Stopping a Run" below — that CLI cannot kill a dispatched run. Continue normally; only mention `olympix update` if the user asks to stop one.
 
 ## Process
 
@@ -87,9 +92,13 @@ Record the **session_id** from the `completed` event (`data.session_id`).
 
 ### Step 4: Wait for Completion
 
-**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="fuzz_tests"`. The loop matches on `id`, reads `status`, and breaks on `Completed`/`Failed` using plain string equality.
+**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="fuzz_tests"`. The loop matches on `id`, reads `status`, and breaks on `Completed`/`Failed`/`Killed` using plain string equality.
 
 **If status is `Failed`:** stop polling and go to Step 5 to read the failure.
+
+**If status is `Killed`:** the run was stopped (see "Stopping a Run"). It is terminal and has no results — report it and stop. Do **not** reconnect or re-dispatch.
+
+**If the user asks to stop the run while you are polling:** go to "Stopping a Run" — do not just abandon the poll. Abandoning it leaves the job burning compute server-side.
 
 ### Step 5: Retrieve Results (+ generated test files, optional PDF report)
 
@@ -167,6 +176,38 @@ Tell the user:
 
 If `exploit_test_cases > 0`, flag it clearly — those are candidate vulnerabilities worth reviewing.
 
+## Stopping a Run
+
+Fuzzing is the heaviest tool here, so a mis-scoped run is worth stopping rather than waiting out. Killing
+is **permanent and destroys results** — confirm with the user before doing it, and never kill one on your
+own initiative.
+
+```bash
+olympix kill-fuzz-session -s <session-id> --agent
+```
+
+**Expected output:**
+```
+{"event":"session_killed","data":{"session_id":"<id>","was_running":true}}
+```
+
+- `was_running: true` — the run was stopped and its compute released.
+- `was_running: false` — nothing to stop; it had already finished, failed, or been killed. This is not an
+  error, and killing again is safe.
+
+After a kill the session is terminal and reports `Killed` in `olympix sessions --agent`. There are **no
+results** — reconnecting returns an `error` event, not `fuzz_test_results`:
+
+```
+{"event":"error","data":{"message":"Server error: This run was killed — no results are available."}}
+```
+
+Report that to the user rather than retrying. To try again, dispatch a fresh run from Step 3 — there is
+no resume, and no test files are downloaded for a killed session.
+
+Killing needs the session id, so if it was never recorded, find it with `olympix sessions --agent` (under
+`fuzz_tests`) before killing.
+
 ## Quick Reference
 
 | Step | Command / Action | Gate |
@@ -175,7 +216,8 @@ If `exploit_test_cases > 0`, flag it clearly — those are candidate vulnerabili
 | 1 | Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` | `forge build` must pass |
 | 2 | Identify top 3 contracts (plugin convention — fuzz is heavy) | Concrete contracts only |
 | 3 | `printf '{"action":"disconnect"}\n' \| olympix generate-fuzz-tests -w . -p ... --agent` | Record session_id from `completed` |
-| 4 | Poll `olympix sessions --agent` (`ARRAY_KEY="fuzz_tests"`) | Until `Completed`/`Failed` |
+| 4 | Poll `olympix sessions --agent` (`ARRAY_KEY="fuzz_tests"`) | Until `Completed`/`Failed`/`Killed` |
+| — | `olympix kill-fuzz-session -s <id> --agent` (only if the user asks to stop) | Confirm first — permanent, results lost |
 | 5 | `olympix connect-fuzz-session -s <id> --agent` (`generate_report` + `disconnect`) | Retrieve results + auto-downloaded test files + PDF |
 | 6 | Save `olympix-results/fuzz_test/fuzz_results.md` + copy test files to `tests/` | — |
 | 7 | Report to user | — |
@@ -183,6 +225,7 @@ If `exploit_test_cases > 0`, flag it clearly — those are candidate vulnerabili
 ## Important Notes
 
 - **Sessions are auto-named** from the repo identity — there is no stdin title action for fuzz dispatch (unlike unit/mutation). Find them later with `olympix sessions --agent` or `olympix list-fuzz-sessions --agent`.
+- **A run can be stopped** — see "Stopping a Run". Killing is permanent and results are lost, so only do it when the user asks.
 - **Never state or imply an expected scan duration**, and never call a long run abnormal. Report phase/state only — "still running", "scanning", "done", "failed". The poll cadence is an internal mechanic; do not present it as an ETA. Fuzzing is heavier than mutation/unit tests, so it can legitimately run a while.
 - **Results also arrive by email.** The agent-mode summary is the counts; the generated test files, the emailed report and the PDF hold the full detail.
 - **The generated test sources are no longer email-only** — they download automatically on reconnect into `fuzz_tests_<session-id>/`, and `download_tests` re-downloads them on demand. This needs a CLI with the `download_tests` action; older builds simply emit no `fuzz_tests_downloaded` event.
@@ -199,4 +242,7 @@ If `exploit_test_cases > 0`, flag it clearly — those are candidate vulnerabili
 | `results_ready` instead of `fuzz_test_results` | Run not finished — wait and re-poll |
 | No `fuzz_tests_downloaded` event / no `tests_path` | CLI predates the test-file download (run `olympix update`) or the session has no stored files — the `progress` event says which. Not fatal; continue with the summary/PDF |
 | `download_tests` returns an `error` event | Session has no stored test files, or the download timed out — retry once; the emailed zip remains the fallback |
+| Session status `Killed` | The run was stopped — terminal, no results. Dispatch a fresh run; there is no resume |
+| `kill-fuzz-session` command missing | CLI predates fuzz kill — tell the user to run `olympix update` |
+| Kill returns `was_running: false` | Already terminal — nothing was stopped. Not an error |
 | `op`/auth fails on dispatch | Re-run the `auth` skill, then retry the command |
