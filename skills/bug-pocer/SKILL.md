@@ -3,7 +3,7 @@ name: bug-pocer
 description: >
   Use when the user wants Olympix BugPocer security analysis run fully automated via
   agent mode — handles the entire flow: scope review, validation, security questions
-  (incl. follow-ups), scan, findings retrieval with verdicts, Q&A, and built-in
+  (incl. follow-ups), scan, findings retrieval with verdicts, and built-in
   PDF + PoC export, all driven programmatically. Always asks the user up front
   whether to scan the full repo or only the diff vs a git ref (diff mode).
   TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer", "diff mode", "diff scan", "scan the diff"
@@ -12,7 +12,7 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 # BugPocer Security Analysis
 
-Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and Q&A — is driven programmatically through JSONL.
+Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and verdicts — is driven programmatically through JSONL.
 
 **What this tool does:** deep security analysis that attempts to **confirm** exploitability and produce proof-of-concept exploit code (PoCs) for real vulnerabilities — going beyond static analysis's *suspected* findings. Each finding carries a verdict (true/false positive) and, where confirmed, a runnable PoC. Heaviest and slowest tool; each new session incurs backend scan cost.
 
@@ -65,14 +65,14 @@ For interactive runs, **ask the user which they want** with `AskUserQuestion` (d
 This choice only changes the launch command in Step 2:
 
 - Full run: `olympix bug-pocer -w . --agent`
-- Diff mode: `olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>]`
+- Diff mode: `olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>] [--diff-dirty working-tree|target]`
 
 Add `--rebuild-context` (`-rc`) to either command to force a fresh context build and skip the `context_cache_review` prompt (Step 3b′) — the CLI reuses a cached context by default.
 
 **Diff-mode behavior:**
 - The diff defines scan scope — BugPocer analyzes only the changed code. The scope-review event still appears; the diff narrows what is ultimately analyzed.
 - **An empty or unresolvable diff aborts the session** — if nothing changed versus the base, the CLI reports it and exits *before* scope review. Pick a base with real changes.
-- `--diff-target` must be the checked-out `HEAD`. A dirty working tree is compared against the working tree (committed line numbers may shift); omit `--diff-target` to diff against the working tree.
+- `--diff-target` must be the checked-out `HEAD`. **With a dirty working tree, agent mode compares against the committed `--diff-target` by default** (the interactive TUI asks). Pass `--diff-dirty working-tree` to diff against the on-disk files instead, or `--diff-dirty target` to make the default explicit. The `diff_review` event reports which was used via `dirty_tree` and `compared_against`.
 - `--diff-target` without `--diff-base` is an error.
 
 ### Step 2: Start BugPocer Session
@@ -158,13 +158,22 @@ The flow proceeds through these stages:
 #### 3a. Sessions List
 First event is `sessions_list` showing existing sessions.
 ```json
-{"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","disconnect"]}
+{"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","clone_session","disconnect"]}
 ```
 
 Send `new_session` (carrying the confirmed title) to start a new session, or `connect_session` with a session ID to reconnect:
 ```json
 {"action":"new_session","data":{"title":"{SESSION_TITLE}"}}
 ```
+
+`clone_session` copies a **terminal** session (status `ContextExpired`, `InitialScanCompleted`,
+`SessionKilled`, or any error) into a fresh one with the same settings — this is the recovery path when
+a session's context has expired, and it saves re-answering the whole validation phase:
+```json
+{"action":"clone_session","data":{"session_id":"<id>"}}
+```
+Cloning a still-running session is rejected with an `error`. To kill a session there is no sessions-list
+action — use the standalone one-shot command `olympix kill-bp-session -s <id> --agent`.
 
 #### 3a′. Pre-flight Failures (conditional, informational)
 Emitted during the initial file scan — the first of these three conditional events, ahead of both
@@ -203,13 +212,20 @@ that if the user asks.
 #### 3b′. Context Cache Review (conditional)
 Emitted **only** when a prior validated context for this exact or similar codebase exists (a previous scan of this repo persisted one). It arrives after `new_session`, before scope review. If no cache exists, this event is skipped.
 ```json
-{"event":"context_cache_review","data":{"match_type":"exact","source_session_id":"<uuid>","cached_at":"2026-07-01T12:00:00Z","overlap_percent":92.5,"changed_files":["src/Vault.sol"],"summary":{"project_type":"Lending","description":"...","patterns":8,"invariants":12,"security_assumptions":5}},"actions":["reuse_context","rebuild_context","disconnect"]}
+{"event":"context_cache_review","data":{"match_type":"exact","source_session_id":"<uuid>","cached_at":"2026-07-01T12:00:00Z","overlap_percent":92.5,"changed_files":["src/Vault.sol"],"summary":{"project_type":"Lending","description":"...","patterns":8,"invariants":12,"security_assumptions":5}},"actions":["reuse_context","update_context","rebuild_context","disconnect"]}
 ```
 
 - `match_type` is `"exact"` (identical file fingerprint) or `"partial"` (`overlap_percent` / `changed_files` populated for partial only).
 - Send `reuse_context` (default — faster, cheaper, reuses the already-validated context) or `rebuild_context` (force a fresh build, e.g. after a major refactor the fingerprint didn't catch).
 ```json
 {"action":"reuse_context"}
+```
+- On an **exact** match only, `update_context` reuses the cached context *and* refines it with new
+  documentation — the cheap middle ground when the code is unchanged but you have better context to add
+  (`partial` matches offer reuse/rebuild only). It takes the same `additional_docs` payload as
+  `submit_docs` (see Step 3f):
+```json
+{"action":"update_context","data":{"additional_docs":{"notes":"Vault shares rebase","paths":["docs/"]}}}
 ```
 - **Dispatched/background agents: send `reuse_context` and never block** (same non-blocking rule as Steps 1.5 / 3 / 10). If the driver ignores the event or stdin closes, the CLI defaults to reuse — the pre-existing behavior.
 - To decide at launch instead, pass `--rebuild-context` on the launch command (Step 1.5); it forces a rebuild and this event is not emitted.
@@ -293,13 +309,35 @@ Do not treat a follow-up as the next top-level question; `current`/`total` reset
 
 #### 3f. Additional Documentation
 ```json
-{"event":"additional_docs_prompt","actions":["submit_docs","skip_docs","disconnect"]}
+{"event":"additional_docs_prompt","actions":["submit_docs","preview_docs","skip_docs","disconnect"]}
 ```
 
-Send `skip_docs` or `submit_docs` with notes/links:
+Send `skip_docs`, or `submit_docs` with any combination of inline notes, link URLs, and **paths**:
 ```json
-{"action":"submit_docs","data":{"notes":"Token uses rebasing","links":["https://docs.example.com"]}}
+{"action":"submit_docs","data":{"notes":"Token uses rebasing","links":["https://docs.example.com"],"paths":["docs/","~/audit/report.pdf","SPEC.md"]}}
 ```
+
+`paths` takes **files and directories interchangeably** — the CLI decides which from disk:
+- **A text file** (any extension) is read and folded into the notes blob.
+- **A `.pdf`** is attached and sent to the model as a native document (max 5 PDFs, 10 MB and 50 pages
+  each, 150 pages total).
+- **A directory** is walked recursively for documentation (`.md`, `.pdf`, and README/AGENTS/AUDIT/
+  SPECIFICATION-style names), skipping `node_modules`, `.git`, `lib`, `out`, `build`, `dist`, `cache`,
+  `artifacts`, `vendor`.
+
+Relative paths resolve against the **workspace** (`-w`), not your shell's CWD; `~` expands. Ordering is
+load-bearing — the token budget is spent in array order, so put the most important documents first. A
+path that doesn't exist is **skipped with a warning, not fatal**.
+
+The CLI replies with `additional_docs_result` itemising exactly what landed:
+```json
+{"event":"additional_docs_result","data":{"items":[{"path":"docs/spec.md","kind":"folder_file","status":"added","tokens":812,"message":null}],"added":4,"skipped":1,"truncated":0,"pdf_count":2,"link_count":1,"tokens_used":9134,"tokens_remaining":74210,"preview":false}}
+```
+
+**`submit_docs` is terminal — it submits the validation and starts the billable scan.** To check what a
+payload would collect *before* committing to it, send the identical payload as `preview_docs`: the CLI
+reports `additional_docs_result` with `"preview":true`, discards the collection, and re-emits
+`additional_docs_prompt`. Up to 3 previews per session. Use it whenever you are unsure a path is right.
 
 #### 3g. Submission
 ```json
@@ -337,12 +375,12 @@ printf '{"action":"connect_session","data":{"session_id":"<id>"}}\n{"action":"di
   | olympix bug-pocer -w <path> --agent
 ```
 
-If you intend to continue with Q&A, PDF export, or PoC export (Steps 6-8), reconnect using the **FIFO driver from Step 2** instead (`olympix connect-bp-session -s <id> -w . --agent < .opix-bp-in > .opix-bp-events.log 2>&1`), so you can keep sending actions interactively.
+If you intend to continue with verdicts, PDF export, or PoC export (Steps 6-8), reconnect using the **FIFO driver from Step 2** instead (`olympix connect-bp-session -s <id> -w . --agent < .opix-bp-in > .opix-bp-events.log 2>&1`), so you can keep sending actions interactively.
 
 **Expected output:**
 ```
 {"event":"progress","data":{"message":"Connected to session <id>. Fetching findings..."}}
-{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["ask_question","generate_pdf","save_pocs","save_findings_md","disconnect"]}
+{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["set_verdict","generate_pdf","save_pocs","save_findings_md","disconnect"]}
 ```
 
 Each finding carries:
@@ -370,23 +408,19 @@ No action is needed to get these — they are on disk after `findings_ready`. Th
 `save_findings_md` actions (Steps 8 / 8.5) remain available only to **re-export** them. The PDF
 (Step 7) is NOT auto-generated — it is a heavier backend call, so request it explicitly when wanted.
 
-### Step 6: Q&A Loop (Optional)
+### Step 6: Verdicts (Optional)
 
-After receiving findings, ask questions about them:
+There is **no `ask_question` action** — the BugPocer chat/Q&A feature was disabled in the CLI, so any
+older instructions describing a Q&A loop no longer apply. Use `set_verdict` to record your own TP/FP
+calls in bulk instead:
 
 ```json
-{"action":"ask_question","data":{"question":"What is the most critical finding?"}}
+{"action":"set_verdict","data":{"verdicts":[{"finding_id":"<id>","verdict":true,"reason":"reachable from deposit()"},{"finding_id":"<id2>","verdict":false,"reason":"guarded by onlyOwner"}]}}
 ```
 
-Flow: `progress` "Question sent" → `qa_waiting` → `question_answered` with `answer` field. Wait for
-`question_answered` using the recipe in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md`
-(`WANT='"event":"question_answered"'`, foreground, re-run on `WAIT_TIMEOUT`; do NOT background it).
-
-After `question_answered`, the valid actions are only `ask_question`, `fetch_findings`, and `disconnect` — `generate_pdf` and `save_pocs` are NOT accepted here; send `fetch_findings` to re-enter `findings_ready` first, then export.
-
-Q&A exchanges auto-persist to `.opix/agent/<session-id>/qa.json`.
-
-Send `disconnect` when done.
+`verdict` is `true` (true positive), `false` (false positive) or `null` (clear back to unreviewed).
+The CLI replies with `verdict_set` carrying a per-finding status. Verdicts set here feed the export
+filters in Steps 7-8.5.
 
 **Reporting verdicts (TP/FP):** answer from the verdict fields, and ALWAYS distinguish the two sources:
 - "BugPocer verdict" = `bugpocer_verdict`.
@@ -402,6 +436,17 @@ Use BugPocer's own PDF generator instead of hand-rolling one. After `findings_re
 ```json
 {"action":"generate_pdf"}
 ```
+
+All three export actions (`generate_pdf`, `save_pocs`, `save_findings_md`) accept an **optional
+`filter`** mirroring the interactive TUI's category x severity checkboxes. Omit it and you get the CLI
+default (true positives + unverified, all severities, false positives excluded). Any key you omit keeps
+its default, so a partial filter is meaningful:
+```json
+{"action":"generate_pdf","data":{"filter":{"include_false_positives":true,"include_low":false}}}
+```
+Keys: `include_true_positives`, `include_unverified`, `include_false_positives`, `include_high`,
+`include_medium`, `include_low`. Excluding *all* categories or *all* severities is rejected with an
+`error`. The resulting event echoes the effective filter back in a `filter` field.
 
 Then wait for the result with the exact recipe in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md`,
 setting `WANT='"event":"pdf_generated"'` — a bounded FOREGROUND wait, re-run on `WAIT_TIMEOUT`; do NOT
@@ -474,7 +519,7 @@ Tell the user:
 
 Then **proactively offer to triage the findings** (use `AskUserQuestion`) — this is the standard closing step after every tool run:
 
-- **"Yes, triage them"** — for each finding (start with Critical/High), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `effective_verdict` (true vs false positive) with a one-line reason. Prioritize what to fix first. You can also drive the built-in Q&A loop (Step 6) for deeper questions.
+- **"Yes, triage them"** — for each finding (start with Critical/High), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `effective_verdict` (true vs false positive) with a one-line reason. Prioritize what to fix first. Record your calls with `set_verdict` (Step 6) so the exports reflect them.
 - **"No, just the findings"** — stop; the saved report + PoCs are the deliverable.
 
 Make this offer every run.
