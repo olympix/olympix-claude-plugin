@@ -72,7 +72,8 @@ Add `--rebuild-context` (`-rc`) to either command to force a fresh context build
 **Diff-mode behavior:**
 - The diff defines scan scope — BugPocer analyzes only the changed code. The scope-review event still appears; the diff narrows what is ultimately analyzed.
 - **An empty or unresolvable diff aborts the session** — if nothing changed versus the base, the CLI reports it and exits *before* scope review. Pick a base with real changes.
-- `--diff-target` must be the checked-out `HEAD`. **With a dirty working tree, agent mode compares against the committed `--diff-target` by default** (the interactive TUI asks). Pass `--diff-dirty working-tree` to diff against the on-disk files instead, or `--diff-dirty target` to make the default explicit. The `diff_review` event reports which was used via `dirty_tree` and `compared_against`.
+- `--diff-target` must be the checked-out `HEAD`. **With a dirty working tree, agent mode compares against the committed `--diff-target` by default** (the interactive TUI asks). Pass `--diff-dirty working-tree` to diff against the on-disk files instead, or `--diff-dirty target` to make the default explicit; any other value is rejected at startup. The `diff_review` event reports which was used via `dirty_tree` and `compared_against`.
+- **Without `--diff-target` the diff always runs against the working tree**, so `compared_against` reports `working_tree` and finding line numbers refer to on-disk files, not to a commit.
 - `--diff-target` without `--diff-base` is an error.
 
 ### Step 2: Start BugPocer Session
@@ -337,7 +338,9 @@ The CLI replies with `additional_docs_result` itemising exactly what landed:
 **`submit_docs` is terminal — it submits the validation and starts the billable scan.** To check what a
 payload would collect *before* committing to it, send the identical payload as `preview_docs`: the CLI
 reports `additional_docs_result` with `"preview":true`, discards the collection, and re-emits
-`additional_docs_prompt`. Up to 3 previews per session. Use it whenever you are unsure a path is right.
+`additional_docs_prompt`. Use it whenever you are unsure a path is right. Up to 3 previews per session
+— a fourth is refused with an `error` and the prompt stays open, so it costs you nothing but the round
+trip.
 
 #### 3g. Submission
 ```json
