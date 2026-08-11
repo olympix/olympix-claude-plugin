@@ -192,10 +192,39 @@ Send `confirm_all` to include everything, or `select_scope` with exclusions:
 {"action":"select_scope","data":{"exclude_contracts":["ContractA"]}}
 ```
 
+#### 3b″. Pre-flight Failures (conditional, informational)
+Emitted during the initial file scan — before scope review — when the CLI's local pre-flight checks
+find something that will likely break the scan on our infrastructure. **The `actions` key is absent
+entirely — this is informational.** The CLI has already decided to continue by the time it reaches
+you, so there is nothing to answer and nothing to send. Do not wait on it, do not treat it as a
+prompt.
+```json
+{"event":"preflight_failed","data":{"failures":[{"check":"cargo git dependencies","summary":"Cargo git dependencies are declared but this project is not vendored:\n    Cargo.toml\n..."}],"remediation_commands":["cargo vendor > .cargo/config.toml   (commit vendor/ and .cargo/config.toml, or add them to the scanned branch)"],"message":"Pre-flight found problems that will likely break the scan:"}}
+```
+
+**Surface this to the user verbatim** — every `check`/`summary` pair and every entry in
+`remediation_commands`. These are the problems the scan is about to hit, reported while they are
+still cheap to fix. Common ones:
+
+- **`cargo git dependencies`** — the repo declares `git = "…"` dependencies and is not vendored.
+  Those crates live in `~/.cargo/git` on the developer's machine, not in the repository, so they
+  are never uploaded, and the build runs with no access to their git remotes (private repos cannot
+  be fetched at all). Remediation is `cargo vendor`.
+- **`git submodules`** — uninitialized submodules; their contents upload as empty directories.
+- **`remapping targets` / `upload completeness` / `node_modules`** — dependencies that resolve
+  locally but will not ship.
+
+If the user is present, tell them the scan will likely produce findings without PoC verification
+and offer to abort, fix, and rerun. If you are a dispatched/background agent, **do not block** —
+record the failures and carry on, then include them in your final report.
+
+Pre-flight can be bypassed entirely with `--skip-preflight` on the launch command; only do that if
+the user asks.
+
 #### 3c. Build Check (conditional)
 If the server's build check failed for the uploaded repo, this arrives BEFORE validation items:
 ```json
-{"event":"build_check_failed","data":{"session_id":"<uuid>","build_command":"forge build","error_excerpt":"..."},"actions":["continue","kill_session","disconnect"]}
+{"event":"build_check_failed","data":{"session_id":"<uuid>","build_command":"forge build","error_excerpt":"...","remediation":"To get full results with PoCs: kill this session, make `forge build` pass from a clean clone with no private credentials, then start a new scan.","common_causes":"Most common causes: private git dependencies we cannot fetch, and prebuilt test artifacts that are not committed (e.g. tests/fixtures/*.so). Scan a branch with public dependencies, and build locally first so those artifacts exist."},"actions":["continue","kill_session","disconnect"]}
 ```
 
 A failing build degrades scan quality and PoC generation. If the failure looks fixable (missing
@@ -203,6 +232,11 @@ remappings, stale lockfile), prefer `kill_session`, fix the build locally, and s
 Send `continue` only when the user wants to proceed anyway. `kill_session` is acknowledged by a
 `session_killed` event, after which the CLI exits. This event does not appear when the build check
 passed.
+
+**Relay `remediation` and `common_causes` to the user along with `error_excerpt`.** They carry the
+actionable part, and the build here runs from the uploaded sources alone — so "it builds on my
+machine" is expected and not a contradiction. Both fields are absent on older CLIs; treat them as
+optional. A `preflight_failed` event earlier in the same run usually names the same root cause.
 
 #### 3d. Validation Items
 After scope confirmation, a `progress` event announces the session ID, then validation items arrive one at a time:
@@ -468,4 +502,6 @@ Make this offer every run.
 | A FIFO write hangs / times out | The CLI exited (no reader on the FIFO) — that's why every write goes through the 5s watchdog (`perl -e 'alarm 5; open(my $f, ">", ".opix-bp-in") or die; print $f "$ARGV[0]\n"' '{"action":"..."}'`, or GNU `timeout 5` on Linux/brew); read `.opix-bp-events.log` to see why the CLI stopped |
 | Reconnect errors with "Session may be Killed..." | The session is Killed/expired — start a new session; do not retry the reconnect |
 | Diff mode exits before scope review | Empty/unresolvable diff — nothing changed vs `--diff-base`, or the ref is invalid. Pick a base ref with real changes, or run full mode |
+| Server build fails on a Rust/Anchor repo that builds locally | Almost always private `git = "…"` cargo dependencies (they live in `~/.cargo/git`, never in the repo) or uncommitted prebuilt `.so` fixtures. Run `cargo vendor > .cargo/config.toml` and commit `vendor/`, or scan a branch with public deps. `preflight_failed` flags this before the upload |
+| `preflight_failed` arrived and you waited for a response | It has no `actions` — it is informational and the CLI has already continued. Report it and move on; never block on it |
 | `--diff-target requires --diff-base` | You passed `--diff-target` alone — supply `--diff-base <ref>` too, or drop `--diff-target` to diff against the working tree |

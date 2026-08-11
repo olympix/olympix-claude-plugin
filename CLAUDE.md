@@ -38,6 +38,8 @@ All supported commands use `--agent` for JSONL communication:
 - **Actions** (agent → CLI): `{"action":"<type>","data":{...}}`
 - Common actions: `confirm_all`, `disconnect`, `new_session`, `connect_session`, `select_files`, `select_scope`, `select_option`, `select_answer`, `confirm_item`, `skip_question`, `skip_docs`, `ask_question`, `reuse_context`, `rebuild_context`
 - `context_cache_review` (BugPocer): emitted when a prior validated context for the same/similar codebase exists; answer `reuse_context` (default, non-blocking) or `rebuild_context`. Skipped when launched with `--rebuild-context`.
+- `preflight_failed` (BugPocer): informational, **no `actions`** — the CLI has already continued. Reports local checks that will likely break the scan (unvendored cargo git dependencies, uninitialized submodules, dependencies that will not upload). Surface it to the user with its `remediation_commands`; never block waiting for a reply. Suppressed by `--skip-preflight`.
+- Events without an `actions` field are informational. Report them and keep reading; blocking on one stalls the run until the 300s stdin timeout.
 
 ## Output structure
 
