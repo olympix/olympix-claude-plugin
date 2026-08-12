@@ -9,7 +9,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 | `olympix:full-run` | User wants a complete security analysis of a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner only |
 | `olympix:mutation-test` | Generate mutation tests (top 10 contracts by criticality) |
-| `olympix:fuzz-test` | Generate fuzz tests (top 3 contracts — compute-heavy) |
+| `olympix:fuzz-test` | Generate fuzz tests (top 3 contracts — compute-heavy); also stops a running fuzz session |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
 | `olympix:bug-pocer` | Run BugPocer security analysis (fully automated via agent mode) |
 | `olympix:assemble-report` | Collect all results into olympix-results/report.md |
@@ -29,6 +29,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.
 - Static analysis runs synchronously. Unit, mutation, and fuzz test generation dispatch async jobs — poll session status with `olympix sessions --agent`; when a session completes, retrieve results via `olympix unit-testing --agent` / `olympix mutation-testing --agent` (`connect_session`), or `olympix connect-fuzz-session -s <id> --agent` for fuzz (session id is the `-s` flag, not a `connect_session` action).
+- A dispatched run can be stopped only for BugPocer (`olympix kill-bp-session -s <id> --agent`) and fuzz (`olympix kill-fuzz-session -s <id> --agent`); unit and mutation have no kill. Both emit `session_killed` with `was_running`, are permanent, and leave the session with no retrievable results — only kill when the user asks.
 
 ## Agent mode protocol
 
