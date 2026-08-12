@@ -1,8 +1,8 @@
 # Waiting for an async result event (agent mode)
 
-After you send a post-findings action (`generate_pdf`, `save_pocs`, `save_findings_md`,
-`ask_question`), the CLI emits the result event **asynchronously** on its stdout — which you
-redirected to `.opix-bp-events.log`. Wait for it with the bounded FOREGROUND loop below.
+After you send a post-findings action (`generate_pdf`, `save_pocs`, `save_findings_md`), the CLI
+emits the result event **asynchronously** on its stdout — which you redirected to
+`.opix-bp-events.log`. Wait for it with the bounded FOREGROUND loop below.
 
 **Do NOT improvise a `grep` loop and do NOT wrap the wait in `run_in_background`.** A backgrounded
 "wait for X" command that you then re-check every few seconds is exactly what produces the
@@ -44,7 +44,6 @@ Set `WANT` to the success event for the action you sent:
 | `generate_pdf` | `"event":"pdf_generated"` |
 | `save_pocs` | `"event":"pocs_saved"` |
 | `save_findings_md` | `"event":"findings_saved"` |
-| `ask_question` | `"event":"question_answered"` |
 
 ## Sentinel
 
