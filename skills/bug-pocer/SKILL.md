@@ -102,7 +102,7 @@ Then start the CLI with another `run_in_background` Bash call, stdin attached to
 ```bash
 olympix bug-pocer -w . --agent < .opix-bp-in > .opix-bp-events.log 2>&1
 # Diff mode (per Step 1.5): append the diff flags —
-# olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>] < .opix-bp-in > .opix-bp-events.log 2>&1
+# olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>] [--diff-dirty working-tree|target] < .opix-bp-in > .opix-bp-events.log 2>&1
 ```
 
 Drive each exchange in its own Bash call:
@@ -323,8 +323,8 @@ Send `skip_docs`, or `submit_docs` with any combination of inline notes, link UR
 - **A `.pdf`** is attached and sent to the model as a native document (max 5 PDFs, 10 MB and 50 pages
   each, 150 pages total).
 - **A directory** is walked recursively for documentation (`.md`, `.pdf`, and README/AGENTS/AUDIT/
-  SPECIFICATION-style names), skipping `node_modules`, `.git`, `lib`, `out`, `build`, `dist`, `cache`,
-  `artifacts`, `vendor`.
+  SPECIFICATION-style names), skipping `node_modules`, `.git`, `.github`, `lib`, `out`, `build`,
+  `dist`, `cache`, `.cache`, `artifacts`, `coverage`, `vendor`, `dependencies`.
 
 Relative paths resolve against the **workspace** (`-w`), not your shell's CWD; `~` expands. Ordering is
 load-bearing — the token budget is spent in array order, so put the most important documents first. A
@@ -332,8 +332,13 @@ path that doesn't exist is **skipped with a warning, not fatal**.
 
 The CLI replies with `additional_docs_result` itemising exactly what landed:
 ```json
-{"event":"additional_docs_result","data":{"items":[{"path":"docs/spec.md","kind":"folder_file","status":"added","tokens":812,"message":null}],"added":4,"skipped":1,"truncated":0,"pdf_count":2,"link_count":1,"tokens_used":9134,"tokens_remaining":74210,"preview":false}}
+{"event":"additional_docs_result","data":{"items":[{"path":"docs/spec.md","resolved_path":"/repo/docs/spec.md","kind":"folder_file","status":"added","tokens":812,"pages":null,"message":null}],"added":4,"skipped":1,"truncated":0,"pdf_count":2,"link_count":1,"tokens_used":9134,"tokens_remaining":74210,"preview":false}}
 ```
+
+`kind` is one of `notes`, `link`, `file`, `pdf`, `folder`, `folder_file`, `folder_pdf`; `status` is
+`added`, `truncated`, `skipped` or `error`. A directory emits one `folder` summary row followed by one
+row per document it contributed, and `resolved_path` is the absolute path the CLI actually read — check
+it when a relative path may have resolved somewhere unexpected. `pages` is populated for PDFs only.
 
 **`submit_docs` is terminal — it submits the validation and starts the billable scan.** To check what a
 payload would collect *before* committing to it, send the identical payload as `preview_docs`: the CLI
@@ -422,8 +427,11 @@ calls in bulk instead:
 ```
 
 `verdict` is `true` (true positive), `false` (false positive) or `null` (clear back to unreviewed).
-The CLI replies with `verdict_set` carrying a per-finding status. Verdicts set here feed the export
-filters in Steps 7-8.5.
+The CLI replies with `verdict_set` carrying one `results` entry per requested finding. `status` is
+`set` or `error` (unknown/ambiguous id, no connection, send failure — read `message`). **`set` means
+dispatched, not server-confirmed** — the local cache is updated and the command sent, but the server
+can still reject it asynchronously, so do not report a verdict as persisted on the strength of `set`
+alone. Verdicts set here feed the export filters in Steps 7-8.5.
 
 **Reporting verdicts (TP/FP):** answer from the verdict fields, and ALWAYS distinguish the two sources:
 - "BugPocer verdict" = `bugpocer_verdict`.
