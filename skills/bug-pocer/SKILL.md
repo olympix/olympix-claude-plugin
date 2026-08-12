@@ -433,6 +433,14 @@ dispatched, not server-confirmed** — the local cache is updated and the comman
 can still reject it asynchronously, so do not report a verdict as persisted on the strength of `set`
 alone. Verdicts set here feed the export filters in Steps 7-8.5.
 
+**Two leftovers of the removed Q&A flow you may still meet.** Neither appears in the reconnect flow
+above (Step 5 auto-fetches findings), but both are live in the protocol:
+- `initial_scan_completed` and `question_answered` accept only `fetch_findings` and `disconnect`.
+  Export actions are **not** accepted there — send `fetch_findings` to re-enter `findings_ready`
+  first, then export.
+- `qa_waiting` means the CLI is blocked on a server push; only `disconnect` is accepted until it
+  resolves. Do not send anything else and do not treat it as a prompt.
+
 **Reporting verdicts (TP/FP):** answer from the verdict fields, and ALWAYS distinguish the two sources:
 - "BugPocer verdict" = `bugpocer_verdict`.
 - "User verdict" = `user_verdict` (`unreviewed` means no human has reviewed it yet).
