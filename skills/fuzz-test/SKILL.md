@@ -32,15 +32,15 @@ BAV agent mode requires a recent CLI. Do **not** probe with `--help | grep -- --
 
 ```bash
 if ! command -v olympix >/dev/null 2>&1 && [ ! -x "$HOME/.opix/bin/olympix" ]; then echo NOT_INSTALLED;
-elif olympix kill-fuzz-session --help >/dev/null 2>&1; then echo AGENT_MODE_WITH_KILL;
-elif olympix connect-fuzz-session --help >/dev/null 2>&1; then echo AGENT_MODE; else echo LEGACY_CLI; fi
+elif olympix kill-bav-session --help >/dev/null 2>&1; then echo AGENT_MODE_WITH_KILL;
+elif olympix connect-bav-session --help >/dev/null 2>&1; then echo AGENT_MODE; else echo LEGACY_CLI; fi
 ```
 
 If `NOT_INSTALLED`, **HARD STOP** — tell the user to install the Olympix CLI from https://olympix.github.io/installation/ and rerun this skill.
 
-If `LEGACY_CLI` (no `connect-fuzz-session` command), the CLI predates BAV agent mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if it still lacks the command.
+If `LEGACY_CLI` (no `connect-bav-session` command), the CLI predates BAV agent mode — tell the user to run `olympix update`, then re-probe. **HARD STOP** if it still lacks the command.
 
-If `AGENT_MODE` (no `kill-fuzz-session` command), everything in this skill works **except** "Stopping a Run" below — that CLI cannot kill a dispatched run. Continue normally; only mention `olympix update` if the user asks to stop one.
+If `AGENT_MODE` (no `kill-bav-session` command), everything in this skill works **except** "Stopping a Run" below — that CLI cannot kill a dispatched run. Continue normally; only mention `olympix update` if the user asks to stop one.
 
 ## Process
 
@@ -68,7 +68,7 @@ BAV dispatches directly from the `-p` file arguments — there is **no** `new_se
 
 ```bash
 printf '{"action":"disconnect"}\n' \
-  | olympix generate-fuzz-tests -w . -p src/Contract1.sol -p src/Contract2.sol -p src/Contract3.sol --agent
+  | olympix generate-bav-tests -w . -p src/Contract1.sol -p src/Contract2.sol -p src/Contract3.sol --agent
 ```
 
 **Expected JSONL output:**
@@ -107,7 +107,7 @@ When status is `Completed`, reconnect with the session id to pull results. Inclu
 
 ```bash
 printf '{"action":"generate_report"}\n{"action":"disconnect"}\n' \
-  | olympix connect-fuzz-session -s <session-id> --agent
+  | olympix connect-bav-session -s <session-id> --agent
 ```
 
 **Expected output:**
@@ -137,7 +137,7 @@ To re-download the test files later without re-reading results, send `download_t
 
 ```bash
 printf '{"action":"download_tests"}\n{"action":"disconnect"}\n' \
-  | olympix connect-fuzz-session -s <session-id> --agent
+  | olympix connect-bav-session -s <session-id> --agent
 ```
 
 ### Step 6: Save Results to olympix-results/
@@ -184,7 +184,7 @@ is **permanent and destroys results** — confirm with the user before doing it,
 own initiative.
 
 ```bash
-olympix kill-fuzz-session -s <session-id> --agent
+olympix kill-bav-session -s <session-id> --agent
 ```
 
 **Expected output:**
@@ -216,16 +216,16 @@ Killing needs the session id, so if it was never recorded, find it with `olympix
 | 0 | Run `auth` skill | Must be authenticated |
 | 1 | Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` | `forge build` must pass |
 | 2 | Identify top 3 contracts (plugin convention — BAV is heavy) | Concrete contracts only |
-| 3 | `printf '{"action":"disconnect"}\n' \| olympix generate-fuzz-tests -w . -p ... --agent` | Record session_id from `completed` |
+| 3 | `printf '{"action":"disconnect"}\n' \| olympix generate-bav-tests -w . -p ... --agent` | Record session_id from `completed` |
 | 4 | Poll `olympix sessions --agent` (`ARRAY_KEY="fuzz_tests"`) | Until `Completed`/`Failed`/`Killed` |
-| — | `olympix kill-fuzz-session -s <id> --agent` (only if the user asks to stop) | Confirm first — permanent, results lost |
-| 5 | `olympix connect-fuzz-session -s <id> --agent` (`generate_report` + `disconnect`) | Retrieve results + auto-downloaded test files + PDF |
+| — | `olympix kill-bav-session -s <id> --agent` (only if the user asks to stop) | Confirm first — permanent, results lost |
+| 5 | `olympix connect-bav-session -s <id> --agent` (`generate_report` + `disconnect`) | Retrieve results + auto-downloaded test files + PDF |
 | 6 | Save `olympix-results/fuzz_test/fuzz_results.md` + copy test files to `tests/` | — |
 | 7 | Report to user | — |
 
 ## Important Notes
 
-- **Sessions are auto-named** from the repo identity — there is no stdin title action for BAV dispatch (unlike unit/mutation). Find them later with `olympix sessions --agent` or `olympix list-fuzz-sessions --agent`.
+- **Sessions are auto-named** from the repo identity — there is no stdin title action for BAV dispatch (unlike unit/mutation). Find them later with `olympix sessions --agent` or `olympix list-bav-sessions --agent`.
 - **A run can be stopped** — see "Stopping a Run". Killing is permanent and results are lost, so only do it when the user asks.
 - **Never state or imply an expected scan duration**, and never call a long run abnormal. Report phase/state only — "still running", "scanning", "done", "failed". The poll cadence is an internal mechanic; do not present it as an ETA. BAV is heavier than mutation/unit tests, so it can legitimately run a while.
 - **Results also arrive by email.** The agent-mode summary is the counts; the generated test files, the emailed report and the PDF hold the full detail.
@@ -237,13 +237,13 @@ Killing needs the session id, so if it was never recorded, find it with `olympix
 |---------|----------|
 | `error` event: tool "isn't enabled for your account" / "private alpha" | Account lacks the BAV feature flag — HARD STOP, tell the user to contact contact@olympix.ai. Do NOT retry |
 | `forge build` fails | Install deps per README; HARD STOP if unfixable |
-| `connect-fuzz-session` command missing | CLI predates BAV agent mode — tell the user to run `olympix update`, then re-probe |
+| `connect-bav-session` command missing | CLI predates BAV agent mode — tell the user to run `olympix update`, then re-probe |
 | Contract path wrong | Verify the path exists with `ls`; use relative path from repo root |
 | Session status `Failed` | Reconnect and read the failure message (often a `forge` compilation error) |
 | `results_ready` instead of `fuzz_test_results` | Run not finished — wait and re-poll |
 | No `fuzz_tests_downloaded` event / no `tests_path` | CLI predates the test-file download (run `olympix update`) or the session has no stored files — the `progress` event says which. Not fatal; continue with the summary/PDF |
 | `download_tests` returns an `error` event | Session has no stored test files, or the download timed out — retry once; the emailed zip remains the fallback |
 | Session status `Killed` | The run was stopped — terminal, no results. Dispatch a fresh run; there is no resume |
-| `kill-fuzz-session` command missing | CLI predates the BAV kill command — tell the user to run `olympix update` |
+| `kill-bav-session` command missing | CLI predates the BAV kill command — tell the user to run `olympix update` |
 | Kill returns `was_running: false` | Already terminal — nothing was stopped. Not an error |
 | `op`/auth fails on dispatch | Re-run the `auth` skill, then retry the command |

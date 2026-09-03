@@ -28,8 +28,8 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - Consistent casing: "BugPocer" (not "BugPoCer"). Exception: CLI-generated artifacts keep their original casing (e.g. the exported PDF `BugPoCer_Scan_Report*.pdf` and its "BugPoCer ... Report" headings) — do not rename them.
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.
-- Static analysis runs synchronously. Unit tests, mutation tests, and Bounded Adversarial Verification (BAV) dispatch async jobs — poll session status with `olympix sessions --agent`; when a session completes, retrieve results via `olympix unit-testing --agent` / `olympix mutation-testing --agent` (`connect_session`), or `olympix connect-fuzz-session -s <id> --agent` for BAV (session id is the `-s` flag, not a `connect_session` action).
-- A dispatched run can be stopped only for BugPocer (`olympix kill-bp-session -s <id> --agent`) and BAV (`olympix kill-fuzz-session -s <id> --agent`); unit and mutation have no kill. Both emit `session_killed` with `was_running`, are permanent, and leave the session with no retrievable results — only kill when the user asks.
+- Static analysis runs synchronously. Unit tests, mutation tests, and Bounded Adversarial Verification (BAV) dispatch async jobs — poll session status with `olympix sessions --agent`; when a session completes, retrieve results via `olympix unit-testing --agent` / `olympix mutation-testing --agent` (`connect_session`), or `olympix connect-bav-session -s <id> --agent` for BAV (session id is the `-s` flag, not a `connect_session` action).
+- A dispatched run can be stopped only for BugPocer (`olympix kill-bp-session -s <id> --agent`) and BAV (`olympix kill-bav-session -s <id> --agent`); unit and mutation have no kill. Both emit `session_killed` with `was_running`, are permanent, and leave the session with no retrievable results — only kill when the user asks.
 
 ## Agent mode protocol
 
@@ -54,7 +54,7 @@ All supported commands use `--agent` for JSONL communication:
   unit-tests/results.json      — dispatch receipt at dispatch; full UT results (coverage) written at retrieval
   mutation-tests/sessions.json — MT session list
   mutation-tests/results.json  — dispatch receipt at dispatch; full MT results (kill scores) written at retrieval
-  fuzz-tests/results.json      — full BAV results summary, written at retrieval (connect-fuzz-session);
+  fuzz-tests/results.json      — full BAV results summary, written at retrieval (connect-bav-session);
                                  tests_path points at the downloaded generated test files
 
 olympix-results/               — formatted reports (created by skills)
