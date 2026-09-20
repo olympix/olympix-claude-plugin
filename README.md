@@ -116,6 +116,13 @@ The plugin passes `--timeout 3600` (or `-t 3600`) to `olympix generate-mutation-
 
 Unit-test generation currently has no equivalent per-run timeout override. Increasing a Bash/polling timeout only changes how long the agent waits.
 
+### Environment files
+
+Ask: "Run mutation tests using `.env.testing`" or "Run BugPocer against the diff from main using `.env.testing`."
+The plugin uses `--include-dot-env --env-file .env.testing`. To send the workspace's default `.env`, use `--include-dot-env` (short form: **`-env`**, one dash). There is no `--env` flag, and `--env-file` alone does not enable upload.
+
+These options send the selected file's contents to the Olympix backend, for example to provide RPC URLs/API keys for fork testing. They work for mutation tests, unit tests, and BugPocer, including diff scans and strict review. `full-run` carries the requested file choice to the applicable tools. Upload is off by default. See [environment-file guidance](skills/_shared/environment-files.md).
+
 ### BugPocer strict mode
 
 Ask: **"Run BugPocer in strict mode: validate every answer with me before submitting it."**

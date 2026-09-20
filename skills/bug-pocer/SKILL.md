@@ -76,6 +76,8 @@ This choice only changes the launch command in Step 2:
 
 In strict mode, always add `--rebuild-context` (`-rc`) to either command. In automated mode, optionally add it to force a fresh context build and skip the `context_cache_review` prompt (Step 3b′) — the CLI reuses a cached context by default.
 
+**Environment files:** follow [Environment files for backend runs](../_shared/environment-files.md) when the user requests `.env`/custom environment input or fork testing needs it. Append `--include-dot-env` / `-env` and, for a custom file, `--env-file <path>` to the Step 2 FIFO launch command. These work with both full-repo and diff scans and with strict review; preserve `--rebuild-context` and the chosen diff flags.
+
 **Diff-mode behavior:**
 - The diff defines scan scope — BugPocer analyzes only the changed code. The scope-review event still appears; the diff narrows what is ultimately analyzed.
 - **An empty or unresolvable diff aborts the session** — if nothing changed versus the base, the CLI reports it and exits *before* scope review. Pick a base with real changes.

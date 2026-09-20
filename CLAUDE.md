@@ -26,6 +26,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - Additional formatted output goes to `olympix-results/` in the project root.
 - BugPocer runs automatically by default. A user request for strict mode or to review answers before submission enables the bug-pocer skill's strict review workflow: obtain approval for every validation/security answer and final submission. Keep setup in the main conversation; background-agent and cached-context defaults must not bypass review.
 - Mutation testing accepts `--timeout <seconds>` / `-t` (10–3600; standard default 1200), per mutant. Preserve user-requested values through full-run dispatch. Unit testing has no equivalent per-run override.
+- Environment-file upload is opt-in for mutation/unit testing and BugPocer (including diff scans): `--include-dot-env` / `-env`, optionally `--env-file <path>`; `--env` is not registered. Preserve the requested file/tool scope through full-run dispatch. Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/environment-files.md`; these flags send contents to the backend, so keep values out of output and handoffs.
 - Consistent casing: "BugPocer" (not "BugPoCer"). Exception: CLI-generated artifacts keep their original casing (e.g. the exported PDF `BugPoCer_Scan_Report*.pdf` and its "BugPoCer ... Report" headings) — do not rename them.
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.

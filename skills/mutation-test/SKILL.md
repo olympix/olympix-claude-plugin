@@ -107,6 +107,8 @@ Honor the requested value within the supported range; explain values outside it 
 
 **Unit testing:** `generate-unit-tests` has no supported per-run timeout override; do not apply this mutation-only flag to it.
 
+**Environment files:** when the user requests `.env`/custom environment input or fork testing needs it, follow [Environment files for backend runs](../_shared/environment-files.md). Append `--include-dot-env` / `-env`, plus `--env-file <path>` for a custom file, to the dispatch above.
+
 **Rules:**
 - Use the **file path** (not the contract name) for each `-p` argument
 - Paths should be relative to the repo root (resolved relative to `-w` workspace)

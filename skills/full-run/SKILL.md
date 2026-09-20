@@ -17,6 +17,8 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, Agent, AskUserQuestion
 
 Preserve any user-requested mutation timeout and BugPocer answer review mode throughout dispatch and handoffs. Pass the mutation timeout to the mutation agent for `--timeout` validation/application per its skill; do not apply it to unit testing. Strict BugPocer mode is enabled by requests such as "validate answers with me before submitting them" and is a workflow preference, not a CLI flag.
 
+**Environment files:** follow [Environment files for backend runs](../_shared/environment-files.md). Preserve the user's upload choice, file path, and requested tool scope through handoffs. Tell each applicable mutation/unit/BugPocer agent to append `--include-dot-env` (plus `--env-file <path>` for a custom file) to its launch command. In strict BugPocer mode, the main agent carries those flags into its FIFO launch alongside diff/rebuild options. Do not send file contents in an agent prompt or add these flags to static analysis/polling.
+
 **Strict-mode exception to all background-only setup rules below:** launch unit and mutation agents together first. Keep BugPocer setup in the main interactive conversation, using the scan mode and session name already chosen in Phase 1 without asking again, following [Strict validation review](../bug-pocer/references/strict-validation.md): rebuild context, obtain approval of each validation/security answer (including follow-ups), then obtain final submission approval. After `validation_submitted`, you may delegate polling/retrieval with the session ID and strict-mode preference. Never dispatch strict setup to an agent that cannot ask the user, and never let an automatic fallback override strict review.
 
 ## The tools, and what each one does
