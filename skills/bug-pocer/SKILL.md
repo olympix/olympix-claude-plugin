@@ -1,8 +1,9 @@
 ---
 name: bug-pocer
 description: >
-  Use when the user wants Olympix BugPocer security analysis run fully automated via
-  agent mode — handles the entire flow: scope review, validation, security questions
+  Use when the user wants Olympix BugPocer security analysis via agent mode,
+  automated by default or with user-approved answers in strict mode — handles the
+  entire flow: scope review, validation, security questions
   (incl. follow-ups), scan, findings retrieval with verdicts, and built-in
   PDF + PoC export, all driven programmatically. Always asks the user up front
   whether to scan the full repo or only the diff vs a git ref (diff mode).
@@ -12,7 +13,7 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 # BugPocer Security Analysis
 
-Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully automated via agent mode. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and verdicts — is driven programmatically through JSONL.
+Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository via agent mode, automated by default with optional strict user review. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and verdicts — is driven programmatically through JSONL.
 
 **What this tool does:** deep security analysis that attempts to **confirm** exploitability and produce proof-of-concept exploit code (PoCs) for real vulnerabilities — going beyond static analysis's *suspected* findings. Each finding carries a verdict (true/false positive) and, where confirmed, a runnable PoC. Heaviest and slowest tool; each new session incurs backend scan cost.
 
@@ -21,6 +22,12 @@ Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository fully au
 > **⛔ REQUIRED FIRST ACTION — do not skip:** before launching the CLI, you MUST ask the user whether to run a **full-repo scan** or a **diff scan** (only code changed vs a git ref). See [Step 1.5](#step-15-choose-scan-mode--full-repo-or-diff). The launch command in Step 2 differs based on the answer — launching without asking is a bug.
 >
 > **Exception — dispatched/background agent (e.g. from `full-run`):** if you are running as a background agent with no interactive user, do NOT ask anything. Use the scan mode handed to you by the caller (default: **full**), and never block on a question — a background agent has no user to prompt. The "ask the user" rule applies only to interactive runs.
+
+## Answer review mode
+
+Honor a request for **strict mode**, **approve every answer**, or **validate answers with me before submitting them** as an instruction to enable strict review for this run. This is a plugin workflow preference, **not a CLI flag**. Read and follow [Strict validation review](references/strict-validation.md) before launching or sending the next answer. Keep the mode across reconnects and handoffs until the user explicitly changes it.
+
+Strict mode requires user approval of each validation decision and security answer (including follow-ups), plus approval before final submission. Its rules override the automatic answers, cached-context reuse, and background-agent fallbacks throughout this skill. Without such a request, preserve the default automated behavior; do not add a new mandatory mode question.
 
 ## Prerequisites
 
@@ -67,7 +74,7 @@ This choice only changes the launch command in Step 2:
 - Full run: `olympix bug-pocer -w . --agent`
 - Diff mode: `olympix bug-pocer -w . --agent --diff-base <ref> [--diff-target <ref>] [--diff-dirty working-tree|target]`
 
-Add `--rebuild-context` (`-rc`) to either command to force a fresh context build and skip the `context_cache_review` prompt (Step 3b′) — the CLI reuses a cached context by default.
+In strict mode, always add `--rebuild-context` (`-rc`) to either command. In automated mode, optionally add it to force a fresh context build and skip the `context_cache_review` prompt (Step 3b′) — the CLI reuses a cached context by default.
 
 **Diff-mode behavior:**
 - The diff defines scan scope — BugPocer analyzes only the changed code. The scope-review event still appears; the diff narrows what is ultimately analyzed.
@@ -125,6 +132,8 @@ perl -e 'alarm 5; open(my $f, ">", ".opix-bp-in") or die "open failed: $!"; prin
 **Before each write**, check the log for new events and confirm the CLI is still running (the background CLI task has not exited / the log does not end in a terminal `error` or completion event). If the watchdog write times out (perl exits with status 142 after ~5s), the CLI is gone — read the log to see why instead of retrying the write.
 
 Repeat: read new events from the log → decide → write the next action into the FIFO.
+
+**Strict mode:** a timeout is never permission to submit an unapproved answer. Follow the recovery rules in [Strict validation review](references/strict-validation.md).
 
 **300-second input timeout:** the CLI waits at most **300 seconds** for each stdin answer. If you exceed it between answers, the CLI emits `{"event":"error","data":{"message":"Timeout waiting for input"}}`. Newer CLIs re-emit the pending event on timeout instead of aborting, but do not rely on that — stay under 300s per answer.
 
@@ -211,6 +220,8 @@ Pre-flight can be bypassed entirely with `--skip-preflight` (`-sp`) on the launc
 that if the user asks.
 
 #### 3b′. Context Cache Review (conditional)
+**Strict mode:** choose `rebuild_context` if this event appears; the reuse/update defaults below apply only to automated mode.
+
 Emitted **only** when a prior validated context for this exact or similar codebase exists (a previous scan of this repo persisted one). It arrives after `new_session`, before scope review. If no cache exists, this event is skipped.
 ```json
 {"event":"context_cache_review","data":{"match_type":"exact","source_session_id":"<uuid>","cached_at":"2026-07-01T12:00:00Z","overlap_percent":92.5,"changed_files":["src/Vault.sol"],"summary":{"project_type":"Lending","description":"...","patterns":8,"invariants":12,"security_assumptions":5}},"actions":["reuse_context","update_context","rebuild_context","disconnect"]}
@@ -267,7 +278,7 @@ After scope confirmation, a `progress` event announces the session ID, then vali
 {"event":"validation_item","data":{"key":"...","name":"...","confidence":70,"content":"...","current":1,"total":11},"actions":["confirm_item","reject_item","select_option","disconnect"]}
 ```
 
-For each item, send `confirm_item` to accept or `reject_item` to reject.
+For each item, send `confirm_item` to accept or `reject_item` to reject. **In strict mode, show the item and proposed decision to the user and wait for approval before sending either action or `select_option`.**
 
 #### 3e. Security Questions
 
@@ -294,6 +305,8 @@ After all validation items, security questions arrive one at a time:
 {"event":"security_question","data":{"question_id":"...","category":"AccessControl","question_text":"...","suggested_answers":[{"id":"a1","label":"...","value":"...","show_follow_up_ids":["f1"]}],"is_follow_up":false,"parent_question_id":null,"current":1,"total":13},"actions":["select_answer","custom_answer","skip_question","disconnect"]}
 ```
 
+**In strict mode, use the rules below to draft a proposed answer, then obtain user approval before sending it. This includes known answers, unknowns, skips, and every follow-up.**
+
 Deterministic answering rule, in order:
 1. If a `suggested_answers` option matches what the code **and docs** show → `select_answer` with `{"answer_id":"<id>"}`.
 2. Else if you know the answer from the code **or docs** but no option fits → `custom_answer` with `{"answer":"<text>"}`.
@@ -301,7 +314,7 @@ Deterministic answering rule, in order:
 
 **Escalating unknowns to the user:** put the `question_text` as the `AskUserQuestion` question and map each `suggested_answers` entry to an option (option label = its `label`); the user can also pick "Other" to supply free text. Translate their reply back to a CLI action — `select_answer` `{"answer_id":"<id>"}` if they chose a suggested option, else `custom_answer` `{"answer":"<their text>"}`. **Write that action immediately after they reply:** the CLI's 300s stdin timeout (Step 2) keeps ticking while you wait on the user — a single ask left unanswered past 300s makes the CLI emit `{"event":"error","data":{"message":"Timeout waiting for input"}}`. When several unknowns arrive close together, batch up to 4 into one `AskUserQuestion` call to cut round-trips, but each pending CLI question must still be answered inside its own 300s window.
 
-> **Dispatched/background agent (e.g. from `full-run`):** do NOT ask — there is no user to prompt (same rule as Steps 1.5, 3, 10). Fall back to the old behavior: `skip_question` when the repo does not determine it and `is_required` is false; otherwise `custom_answer` with your best read of the code **and the repo's docs** (the trust-model/documentation-precedence rule above applies here too — a role the docs describe as trusted is trusted). Never call `AskUserQuestion`; it blocks the whole run.
+> **Dispatched/background agent in automated mode (e.g. from `full-run`):** do NOT ask — there is no user to prompt (same rule as Steps 1.5, 3, 10). Fall back to the old behavior: `skip_question` when the repo does not determine it and `is_required` is false; otherwise `custom_answer` with your best read of the code **and the repo's docs** (the trust-model/documentation-precedence rule above applies here too — a role the docs describe as trusted is trusted). Never call `AskUserQuestion`; it blocks the whole run.
 
 **Follow-up questions (`is_follow_up: true`):** selecting an answer whose `show_follow_up_ids` is
 non-empty causes the CLI to emit one or more follow-up `security_question` events (linked by
@@ -312,6 +325,8 @@ Do not treat a follow-up as the next top-level question; `current`/`total` reset
 ```json
 {"event":"additional_docs_prompt","actions":["submit_docs","preview_docs","skip_docs","disconnect"]}
 ```
+
+**In strict mode, both `skip_docs` and `submit_docs` require final approval of the answer summary and documentation choice before sending: either action can submit validation and start the scan.** `validation_submitted` in Step 3g is already a receipt, too late to ask.
 
 Send `skip_docs`, or `submit_docs` with any combination of inline notes, link URLs, and **paths**:
 ```json

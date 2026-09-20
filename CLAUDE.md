@@ -11,7 +11,7 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 | `olympix:mutation-test` | Generate mutation tests (top 10 contracts by criticality) |
 | `olympix:fuzz-test` | Generate fuzz tests (top 3 contracts — compute-heavy); also stops a running fuzz session |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
-| `olympix:bug-pocer` | Run BugPocer security analysis (fully automated via agent mode) |
+| `olympix:bug-pocer` | Run BugPocer security analysis (automated by default; optional strict review) |
 | `olympix:assemble-report` | Collect all results into olympix-results/report.md |
 | `olympix:auth` | Check or refresh CLI authentication |
 
@@ -24,7 +24,8 @@ Olympix is a smart contract security platform. This plugin runs its tools from C
 - Top 10 contracts for mutation/unit tests (plugin convention; CLI hard limits differ per tool: mutation tests accept up to 100, unit tests at most 10).
 - Results persist automatically to `.opix/agent/` inside the workspace (`-w` path).
 - Additional formatted output goes to `olympix-results/` in the project root.
-- BugPocer runs fully automated via agent mode — no user handoff needed.
+- BugPocer runs automatically by default. A user request for strict mode or to review answers before submission enables the bug-pocer skill's strict review workflow: obtain approval for every validation/security answer and final submission. Keep setup in the main conversation; background-agent and cached-context defaults must not bypass review.
+- Mutation testing accepts `--timeout <seconds>` / `-t` (10–3600; standard default 1200), per mutant. Preserve user-requested values through full-run dispatch. Unit testing has no equivalent per-run override.
 - Consistent casing: "BugPocer" (not "BugPoCer"). Exception: CLI-generated artifacts keep their original casing (e.g. the exported PDF `BugPoCer_Scan_Report*.pdf` and its "BugPoCer ... Report" headings) — do not rename them.
 - The `OlympixUnitTest("ContractName")` annotation string must match the actual `contract` declaration name, not the file name.
 - CLI commands use `olympix <subcommand>` directly. No aliases or prefixes.
@@ -38,7 +39,7 @@ All supported commands use `--agent` for JSONL communication:
 - **Events** (CLI → agent): `{"event":"<type>","data":{...},"actions":[...]}`
 - **Actions** (agent → CLI): `{"action":"<type>","data":{...}}`
 - Common actions: `confirm_all`, `disconnect`, `new_session`, `connect_session`, `clone_session`, `select_files`, `select_scope`, `select_option`, `select_answer`, `confirm_item`, `skip_question`, `skip_docs`, `preview_docs`, `set_verdict`, `reuse_context`, `update_context`, `rebuild_context`
-- `context_cache_review` (BugPocer): emitted when a prior validated context for the same/similar codebase exists; answer `reuse_context` (default, non-blocking) or `rebuild_context`. Skipped when launched with `--rebuild-context`.
+- `context_cache_review` (BugPocer): emitted when a prior validated context for the same/similar codebase exists; answer `reuse_context` (default, non-blocking) or `rebuild_context`. Strict mode requires rebuilding to expose validation for user review. Skipped when launched with `--rebuild-context`.
 - `preflight_failed` (BugPocer): informational, **no `actions`** — pre-flight treats agent mode as non-interactive, so it has already continued. Reports local checks that will likely break the scan (unvendored cargo git dependencies, uninitialized submodules, dependencies that will not upload). Surface it to the user with its `remediation_commands`; never block waiting for a reply. Suppressed by `--skip-preflight` (`-sp`).
 - Events without an `actions` field are informational. Report them and keep reading; blocking on one stalls the run until the 300s stdin timeout.
 

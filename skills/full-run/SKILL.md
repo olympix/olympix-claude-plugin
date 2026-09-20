@@ -13,6 +13,12 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, Agent, AskUserQuestion
 
 `full-run` is the **orchestrator** — it does not contain tool logic of its own. It runs the fast setup once, then drives each underlying tool skill (`static-analysis`, `unit-test`, `mutation-test`, `bug-pocer`) in the right order, dispatching the long-running ones as **background agents** so the user can keep talking to you while the scans run. You stay free to chat, relay updates as each tool finishes, and post a periodic heartbeat.
 
+## Requested run options
+
+Preserve any user-requested mutation timeout and BugPocer answer review mode throughout dispatch and handoffs. Pass the mutation timeout to the mutation agent for `--timeout` validation/application per its skill; do not apply it to unit testing. Strict BugPocer mode is enabled by requests such as "validate answers with me before submitting them" and is a workflow preference, not a CLI flag.
+
+**Strict-mode exception to all background-only setup rules below:** launch unit and mutation agents together first. Keep BugPocer setup in the main interactive conversation, using the scan mode and session name already chosen in Phase 1 without asking again, following [Strict validation review](../bug-pocer/references/strict-validation.md): rebuild context, obtain approval of each validation/security answer (including follow-ups), then obtain final submission approval. After `validation_submitted`, you may delegate polling/retrieval with the session ID and strict-mode preference. Never dispatch strict setup to an agent that cannot ask the user, and never let an automatic fallback override strict review.
+
 ## The tools, and what each one does
 
 Present this plainly to the user whenever you ask which tools to run — do NOT use internal jargon ("kill score", "agent dispatch") without explaining it.
@@ -99,13 +105,15 @@ Ask the user with AskUserQuestion whether to run BugPocer (options: "Yes, run it
 
 Launch one background agent per long-running tool with the `Agent` tool, `run_in_background: true`, `subagent_type: general-purpose`. Each agent owns its tool end-to-end (dispatch → poll → retrieve → save) and returns a structured result.
 
+> **Default automated mode only; strict BugPocer follows the exception above.**
+>
 > **⛔ ALL agents dispatch in ONE message, simultaneously, in the background.** Put every `Agent` call (mutation, unit, and BugPocer if opted in) in a **single response** with `run_in_background: true`. Do NOT run any tool's flow in the foreground. Do NOT wait for one agent before dispatching the next. **In particular, BugPocer's interactive setup (scope → validation → security questions → submit) runs INSIDE its own background agent — never drive it from the main loop.** The whole point: the user keeps chatting with you while all tools run concurrently. If you find yourself "waiting for BugPocer" before the others start, you've done it wrong — fan them all out at once.
 
 Pass each agent: the absolute repo path, the ranked contract list, and its session name. **Tell each agent to USE the session name you provide verbatim and NOT to ask for a name** — the user has already confirmed it here, and a background agent has no user to prompt. **Also tell each agent to poll with the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md`, in the FOREGROUND, re-running the bounded call until the session is terminal** — a dispatched agent that backgrounds its poll and yields is not reliably re-invoked when the background task finishes, so it ends early or spins re-reading the log.
 
 > **Background agents must NEVER call `AskUserQuestion` — for anything.** They have no user. That means: do not ask for a session name (use the one passed), do not ask BugPocer scan mode (use `{BUGPOCER_SCAN_MODE}`), and do **not** make the end-of-run "offer to triage" that each tool skill describes — triage is the orchestrator's job here (Phase 3), done once the agent reports back. The agent's only output is its structured result.
 
-**Mutation agent** — prompt it to run the `mutation-test` skill flow. **Skip its Steps 0–2 (auth, build, ranking) — Phase 1 already did them; use the ranked contract list passed to you, do not re-rank. Do not offer triage at the end — just return results.**
+**Mutation agent** — pass any user-requested per-mutant timeout explicitly and instruct it to append `--timeout <seconds>` to the dispatch below (see mutation-test for supported range). Prompt it to run the `mutation-test` skill flow. **Skip its Steps 0–2 (auth, build, ranking) — Phase 1 already did them; use the ranked contract list passed to you, do not re-rank. Do not offer triage at the end — just return results.**
 - Dispatch: `printf '{"action":"new_session","data":{"title":"<base> [mutation]"}}\n{"action":"disconnect"}\n' | olympix generate-mutation-tests -w . -p path1 -p path2 ... --agent`
 - Record the session ID from `results_ready`, poll `olympix sessions --agent` until `Completed`/`Failed`, retrieve via `olympix mutation-testing --agent`, save to `olympix-results/mutation_test/`.
 - Return: session ID, name, kill score (killed/total), status, output path.
@@ -115,7 +123,7 @@ Pass each agent: the absolute repo path, the ranked contract list, and its sessi
 - Record the session ID, poll until `Completed`/`Failed`, retrieve via `olympix unit-testing --agent`, save to `olympix-results/unit_test/`.
 - Return: session ID, name, coverage, test count, status, output path. If a repo-wide stack-too-deep blocks coverage, return that as the status instead of dispatching.
 
-**BugPocer agent** (only if the user opted in) — prompt it to run the `bug-pocer` skill flow:
+**BugPocer agent** (only if the user opted in and answer review mode is automated) — prompt it to run the `bug-pocer` skill flow:
 - **Run FULLY NON-INTERACTIVELY — you are a background agent with NO user. Do NOT call `AskUserQuestion` for anything (scan mode, session name, scope, docs). Use the scan mode passed to you (`{BUGPOCER_SCAN_MODE}`, default full) and the session name verbatim. Never block on a question.** The bug-pocer skill's "ask full-vs-diff" gate explicitly exempts dispatched/background agents — skip it.
 - Start the session through the FIFO driver, passing the name in `new_session`: `{"action":"new_session","data":{"title":"<base> [bugpocer]"}}`. For diff mode, append `--diff-base <ref>` to the launch command per `{BUGPOCER_SCAN_MODE}`.
 - Confirm scope + validation items; answer security questions from the repo per the bug-pocer skill's deterministic rule (do NOT blindly skip them); skip docs — all without prompting any user.
@@ -174,7 +182,8 @@ Tell the user:
 
 ## Important Notes
 
-- **Setup is synchronous, tools are background.** Phase 1 (auth, build, ranking, static analysis, naming, opt-in) is done by you in the foreground; only the long-running tools fan out to background agents.
+- **Strict BugPocer setup stays interactive** until the user approves final submission; only then may its polling/retrieval be delegated.
+- **Default automated mode: setup is synchronous, tools are background.** Phase 1 (auth, build, ranking, static analysis, naming, opt-in) is done by you in the foreground; only the long-running tools fan out to background agents.
 - **Dispatch the background agents in one message** so they run concurrently against separate backend sessions.
 - **Name every session** and pass the title in `new_session` so the user can find them in the CLI later; always ask the user, suggesting a default.
 - **Never claim or judge durations** — see the reporting rules above.
