@@ -99,7 +99,7 @@ These titles are passed to each tool's `new_session` (see below) so each session
 
 Ask the user with AskUserQuestion whether to run BugPocer (options: "Yes, run it" / "Skip for now"), noting it incurs backend scan cost. Record the choice for Phase 2.
 
-**If they opt in, ask the scan mode now too** (full-repo vs diff) with AskUserQuestion, and if diff, the base ref — because the background BugPocer agent has no user to prompt. Decide it here while the user is present and pass the answer to the agent. Default: **full**. Record `{BUGPOCER_SCAN_MODE}` (full, or `diff --diff-base <ref>`).
+**If they opt in, ask the scan mode now too** (full-repo vs diff) with AskUserQuestion, and if diff, the base ref — because the background BugPocer agent has no user to prompt. Decide it here while the user is present and pass the answer to the agent. Default: **full**. Record `{BUGPOCER_SCAN_MODE}` (full, or `diff --diff-base <ref>`). If the user asked to focus BugPocer on specific areas, also record `{BUGPOCER_DIRECTED}` — the `--directed --domains <ids>` flags and/or the directions to write to a `--directions-file` (see the bug-pocer skill, Step 1.6). Don't ask about directed mode otherwise.
 
 ---
 
@@ -127,7 +127,7 @@ Pass each agent: the absolute repo path, the ranked contract list, and its sessi
 
 **BugPocer agent** (only if the user opted in and answer review mode is automated) — prompt it to run the `bug-pocer` skill flow:
 - **Run FULLY NON-INTERACTIVELY — you are a background agent with NO user. Do NOT call `AskUserQuestion` for anything (scan mode, session name, scope, docs). Use the scan mode passed to you (`{BUGPOCER_SCAN_MODE}`, default full) and the session name verbatim. Never block on a question.** The bug-pocer skill's "ask full-vs-diff" gate explicitly exempts dispatched/background agents — skip it.
-- Start the session through the FIFO driver, passing the name in `new_session`: `{"action":"new_session","data":{"title":"<base> [bugpocer]"}}`. For diff mode, append `--diff-base <ref>` to the launch command per `{BUGPOCER_SCAN_MODE}`.
+- Start the session through the FIFO driver, passing the name in `new_session`: `{"action":"new_session","data":{"title":"<base> [bugpocer]"}}`. For diff mode, append `--diff-base <ref>` to the launch command per `{BUGPOCER_SCAN_MODE}`. If `{BUGPOCER_DIRECTED}` was passed, append those flags too and answer `directed_scope` with `confirm_directed`.
 - Confirm scope + validation items; answer security questions from the repo per the bug-pocer skill's deterministic rule (do NOT blindly skip them); skip docs — all without prompting any user.
 - If a `context_cache_review` event appears, send `reuse_context` (default — a prior context for this repo is reused, faster and cheaper); to force a fresh build for the whole run, launch bug-pocer with `--rebuild-context`.
 - Poll until `InitialScanCompleted` (BugPocer never reports `Completed`), retrieve findings via `connect-bp-session` (PoCs + split markdown download automatically on retrieval), save to `olympix-results/bugpocer_pocs/`.
