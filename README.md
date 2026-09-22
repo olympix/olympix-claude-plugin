@@ -105,9 +105,35 @@ This will:
 3. Run static analysis, save findings, and offer to triage them against the source
 4. Generate unit tests with coverage scaffolding
 5. Generate mutation tests for the top 10 most critical contracts
-6. Run BugPocer security analysis (fully automated)
+6. Run BugPocer security analysis (automated by default; optional strict review)
 7. Wait for async results (mutation/unit/BugPocer run as background agents) and download them directly
 8. Assemble all results into `olympix-results/report.md`
+
+### Mutation timeout
+
+For a long test suite, ask: "Run mutation tests with a 3600-second timeout per mutant."
+The plugin passes `--timeout 3600` (or `-t 3600`) to `olympix generate-mutation-tests --agent`, including when requested through `full-run`. This controls the test-suite runtime per mutant, not total job duration. Explicit values are 10–3600 seconds; the standard default is 1200 seconds (20 minutes), with configuration/runner minimums described in the [mutation-test skill](skills/mutation-test/SKILL.md).
+
+Unit-test generation currently has no equivalent per-run timeout override. Increasing a Bash/polling timeout only changes how long the agent waits.
+
+### Environment files
+
+Ask: "Run mutation tests using `.env.testing`" or "Run BugPocer against the diff from main using `.env.testing`."
+The plugin uses `--include-dot-env --env-file .env.testing`. To send the workspace's default `.env`, use `--include-dot-env` (short form: **`-env`**, one dash). There is no `--env` flag, and `--env-file` alone does not enable upload.
+
+These options send the selected file's contents to the Olympix backend, for example to provide RPC URLs/API keys for fork testing. They work for mutation tests, unit tests, and BugPocer, including diff scans and strict review. `full-run` carries the requested file choice to the applicable tools. Upload is off by default. See [environment-file guidance](skills/_shared/environment-files.md).
+
+### BugPocer strict mode
+
+Ask: **"Run BugPocer in strict mode: validate every answer with me before submitting it."**
+Or: **"Can you validate answers in the validation step with me, before submitting them?"**
+Both enable the same optional review workflow, also supported in `full-run`:
+
+- The agent shows each validation item and proposed decision, then waits for your approval or correction.
+- Every security answer and follow-up requires your approval, even when the answer seems clear from the repo.
+- Before submitting validation and starting the scan, the agent asks you to approve the reviewed answer summary and documentation choice.
+
+Strict mode rebuilds cached context so validation is presented for review, and keeps setup in the main conversation. Timeouts or background execution never authorize automatic answers. This is a plugin instruction, not an `olympix --strict` flag. Without a request for strict review, the existing automated workflow remains the default. See [strict validation review](skills/bug-pocer/references/strict-validation.md).
 
 ## Available skills
 
@@ -118,7 +144,7 @@ This will:
 | `olympix:mutation-test` | Generate mutation tests for top 10 contracts |
 | `olympix:fuzz-test` | Generate fuzz tests for top 3 contracts (run on demand; not part of `full-run`). Can also stop a running fuzz session |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
-| `olympix:bug-pocer` | Run BugPocer security analysis (fully automated) |
+| `olympix:bug-pocer` | Run BugPocer security analysis (automated by default; optional strict review) |
 | `olympix:assemble-report` | Collect results into `olympix-results/report.md` |
 | `olympix:auth` | Check/refresh CLI authentication |
 
@@ -126,7 +152,7 @@ This will:
 
 - **Static analysis** runs synchronously — results are immediate.
 - **Mutation tests and unit tests** dispatch async jobs. Results are downloaded directly via agent mode when complete — no need to check email.
-- **BugPocer** runs fully automated via agent mode — scope review, validation, questions, scan, and findings retrieval all happen programmatically.
+- **BugPocer** runs via agent mode — scope review, validation, questions, scan, and findings retrieval happen programmatically, with user approval before answers/submission when strict mode is requested.
 
 All results auto-persist to `.opix/agent/` inside the workspace directory.
 

@@ -94,6 +94,20 @@ Record the **session_id** from the `results_ready` event.
 - `--agent` — agent mode, JSONL stdin/stdout (required for this skill)
 - `-w .` — workspace directory (paths resolve relative to this)
 - `-p <path>` — contract file to mutate (repeat once per contract)
+- `--timeout <seconds>` / `-t <seconds>` — maximum test-suite runtime **per mutant**, not the overall job duration. The standard default is **1200 seconds (20 minutes)**; explicit values must be integers from **10 through 3600 seconds**. The CLI default can be configured by `FORGE_TEST_TIMEOUT_IN_SECS`; the backend also applies its runner default as a minimum, so a smaller requested value may not shorten execution.
+
+**Long test suites:** if the user requests a larger mutation timeout, pass it on the initial `generate-mutation-tests` command. For example, allow up to one hour per mutant:
+
+```bash
+printf '{"action":"new_session","data":{"title":"{SESSION_TITLE}"}}\n{"action":"disconnect"}\n' \
+  | olympix generate-mutation-tests -w . -p src/Contract1.sol --timeout 3600 --agent
+```
+
+Honor the requested value within the supported range; explain values outside it rather than silently clamping them. If a run reports test execution timeouts, suggest increasing this value within that range. Changing a polling/Bash timeout or reconnecting does not change an already dispatched job's per-mutant timeout; it requires a new run. Do not automatically redispatch a failed job. A request passed by `full-run` must reach this dispatch command too.
+
+**Unit testing:** `generate-unit-tests` has no supported per-run timeout override; do not apply this mutation-only flag to it.
+
+**Environment files:** when the user requests `.env`/custom environment input or fork testing needs it, follow [Environment files for backend runs](../_shared/environment-files.md). Append `--include-dot-env` / `-env`, plus `--env-file <path>` for a custom file, to the dispatch above.
 
 **Rules:**
 - Use the **file path** (not the contract name) for each `-p` argument

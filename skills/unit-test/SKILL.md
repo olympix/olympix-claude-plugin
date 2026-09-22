@@ -298,6 +298,10 @@ if [ -n "$org_repo" ] && [ -n "$short_sha" ]; then echo "${org_repo}@${short_sha
 
 ### Step 12: Dispatch Unit Test Generation
 
+**Timeouts:** `generate-unit-tests` currently has no supported CLI/request field for a per-run test timeout. `--timeout` / `-t` is a mutation-testing option; do not pass it here or claim that a local environment variable changes the remote unit-test job. If the user asks for a larger unit-test execution timeout, explain that it requires backend support/configuration. Bash and polling timeouts only control how long the agent waits; continue using the shared polling loop for an active job.
+
+**Environment files:** when the user requests `.env`/custom environment input or fork testing needs it, follow [Environment files for backend runs](../_shared/environment-files.md). Append `--include-dot-env` / `-env`, plus `--env-file <path>` for a custom file, to the dispatch below.
+
 Pass the confirmed session name in `data.title`:
 
 ```bash
