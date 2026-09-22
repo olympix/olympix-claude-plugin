@@ -135,6 +135,12 @@ Both enable the same optional review workflow, also supported in `full-run`:
 
 Strict mode rebuilds cached context so validation is presented for review, and keeps setup in the main conversation. Timeouts or background execution never authorize automatic answers. This is a plugin instruction, not an `olympix --strict` flag. Without a request for strict review, the existing automated workflow remains the default. See [strict validation review](skills/bug-pocer/references/strict-validation.md).
 
+### BugPocer directed scans
+
+Ask: **"Run a directed BugPocer scan on the vault and oracle logic"** or **"Check whether a stale price can let users over-borrow."**
+
+The agent runs `olympix bug-pocer --directed` with the matching domains (`--domains vaults,oracles`) and/or your questions as custom directions (`--directions-file`), confirms the directed scope, and continues the normal flow. Findings unrelated to the selected targets are not reported. Domains are Solidity-only; custom directions work for every language. Directed scans combine with diff mode and strict review, and use the normal run quota. Without such a request, BugPocer runs a standard scan.
+
 ## Available skills
 
 | Skill | Description |
