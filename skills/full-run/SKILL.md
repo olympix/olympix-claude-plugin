@@ -130,8 +130,8 @@ Pass each agent: the absolute repo path, the ranked contract list, and its sessi
 - Start the session through the FIFO driver, passing the name in `new_session`: `{"action":"new_session","data":{"title":"<base> [bugpocer]"}}`. For diff mode, append `--diff-base <ref>` to the launch command per `{BUGPOCER_SCAN_MODE}`. If `{BUGPOCER_DIRECTED}` was passed, append those flags too and answer `directed_scope` with `confirm_directed`.
 - Confirm scope + validation items; answer security questions from the repo per the bug-pocer skill's deterministic rule (do NOT blindly skip them); skip docs — all without prompting any user.
 - If a `context_cache_review` event appears, send `reuse_context` (default — a prior context for this repo is reused, faster and cheaper); to force a fresh build for the whole run, launch bug-pocer with `--rebuild-context`.
-- Poll until `InitialScanCompleted` (BugPocer never reports `Completed`), retrieve findings via `connect-bp-session` (PoCs + split markdown download automatically on retrieval), save to `olympix-results/bugpocer_pocs/`.
-- Return: session ID, name, finding counts by severity/verdict, status, output path.
+- Poll until `InitialScanCompleted` (BugPocer never reports `Completed`), retrieve findings via `connect-bp-session` (PoCs + findings markdown download automatically on retrieval), save to `olympix-results/bugpocer_pocs/`.
+- Return: session ID, name, finding counts by severity and by assessment (`category`: Verified / Needs Further Review / Not Exploitable, plus `hidden_not_exploitable`), status, output path.
 
 After dispatching, tell the user: which agents are running, the session names, and that they can keep chatting — you'll report as each finishes.
 
