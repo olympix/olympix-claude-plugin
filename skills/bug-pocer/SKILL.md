@@ -90,10 +90,18 @@ In strict mode, always add `--rebuild-context` (`-rc`) to either command. In aut
 
 A **directed scan** investigates only the risk **domains** and/or **custom directions** (specific questions about the code) the user picks; an independent scope review drops findings that don't connect to a selected target. Use it when the user asks to focus the scan ("only look at the oracle logic", "check whether X can happen", "directed scan"). Do **not** add it as a new mandatory question — without such a request, run a standard scan. Directed mode combines with diff mode and with strict review.
 
-Append to the Step 2 launch command:
+First check the CLI supports directed mode (older CLIs reject the flag as plain text, even with `--agent`):
 
 ```bash
---directed --domains vaults,oracles --directions-file .opix-bp-directions.md
+olympix bug-pocer --help 2>&1 | grep -q -- --directed && echo DIRECTED_OK || echo DIRECTED_UNSUPPORTED
+```
+
+If `DIRECTED_UNSUPPORTED`, tell the user to run `olympix update` and re-probe; if it is still unsupported, offer a standard scan instead.
+
+Append to the Step 2 launch command (use an absolute path for the directions file — a relative one resolves from the directory the CLI is launched in, not from `-w`):
+
+```bash
+--directed --domains vaults,oracles --directions-file "$PWD/.opix-bp-directions.md"
 ```
 
 - `--directed` is required. `--domains` / `--directions-file` **without `--directed` fail at startup**.
@@ -163,7 +171,7 @@ Repeat: read new events from the log → decide → write the next action into t
 
 ```bash
 kill "$(cat .opix-bp-holder.pid)" 2>/dev/null
-rm -f .opix-bp-in .opix-bp-holder.pid
+rm -f .opix-bp-in .opix-bp-holder.pid .opix-bp-directions.md
 ```
 
 (Use the PID file — job specs like `%1` don't survive across Bash calls.)
@@ -241,6 +249,13 @@ record the failures and carry on, then include them in your final report.
 Pre-flight can be bypassed entirely with `--skip-preflight` (`-sp`) on the launch command; only do
 that if the user asks.
 
+#### 3a″. Directed Scope (directed scans only)
+Emitted after pre-flight and **before** context cache review and scope review when the session is directed. It echoes the resolved scope:
+```json
+{"event":"directed_scope","data":{"domains":["vaults","oracles"],"directions":["Can a stale oracle price let a user borrow more than their collateral allows?"]},"actions":["confirm_directed","disconnect"]}
+```
+Check it matches what the user asked for, then send `{"action":"confirm_directed"}` (in strict mode, after the user approves the scope). Any other action returns an `error` with code `invalid_directed_action`, and the prompt stays open. After a 300s read timeout, current CLIs re-emit `directed_scope`; on earlier directed builds the CLI instead emits `Timeout waiting for input` followed by `invalid_directed_action` without re-emitting — in both cases the prompt is still open, so send `confirm_directed` or `disconnect`, and never treat it as a rejection of an answer. An invalid scope (unknown domain, no targets, a domain on a non-Solidity repo, directions over the limits) fails with `invalid_directed_scope`; a server that doesn't support directed mode fails with `directed_unavailable`.
+
 #### 3b′. Context Cache Review (conditional)
 **Strict mode:** choose `rebuild_context` if this event appears; the reuse/update defaults below apply only to automated mode.
 
@@ -263,13 +278,6 @@ Emitted **only** when a prior validated context for this exact or similar codeba
 ```
 - **Dispatched/background agents: send `reuse_context` and never block** (same non-blocking rule as Steps 1.5 / 3 / 10). If the driver ignores the event or stdin closes, the CLI defaults to reuse — the pre-existing behavior.
 - To decide at launch instead, pass `--rebuild-context` on the launch command (Step 1.5); it forces a rebuild and this event is not emitted.
-
-#### 3a″. Directed Scope (directed scans only)
-Emitted before scope review when the session is directed. It echoes the resolved scope:
-```json
-{"event":"directed_scope","data":{"domains":["vaults","oracles"],"directions":["Can a stale oracle price let a user borrow more than their collateral allows?"]},"actions":["confirm_directed","disconnect"]}
-```
-Check it matches what the user asked for, then send `{"action":"confirm_directed"}` (in strict mode, after the user approves the scope). Any other action returns an `error` with code `invalid_directed_action`. An invalid scope (unknown domain, no targets, a domain on a non-Solidity repo, directions over the limits) fails with `invalid_directed_scope`; a server without directed support fails with `directed_unavailable`.
 
 #### 3b. Scope Review
 ```json
@@ -621,4 +629,6 @@ Make this offer every run.
 | `preflight_failed` arrived and you waited for a response | It has no `actions` — it is informational and the CLI has already continued. Report it and move on; never block on it |
 | `--diff-target requires --diff-base` | You passed `--diff-target` alone — supply `--diff-base <ref>` too, or drop `--diff-target` to diff against the working tree |
 | `--domains and --directions-file require --directed` | Add `--directed` to the launch command |
-| `invalid_directed_scope` / `directed_unavailable` error | Fix the scope (known domain IDs, at least one target, domains only on Solidity, within direction limits), or — for `directed_unavailable` — run a standard scan and suggest `olympix update` / a newer backend |
+| `Invalid argument '--directed'! Try running 'help' to check valid arguments` (plain text, even with `--agent`) | The CLI predates directed mode — tell the user to run `olympix update`, then re-probe (Step 1.6) |
+| `invalid_directed_scope` error | Fix the scope: known domain IDs, at least one target, domains only on Solidity repos, directions within the limits |
+| `directed_unavailable` error | The CLI supports directed mode but the Olympix server doesn't advertise it yet — `olympix update` won't help. Tell the user, and offer a standard scan instead |
