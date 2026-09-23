@@ -16,7 +16,7 @@ allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 
 Run Olympix BugPocer on a Foundry- or Hardhat-based Solidity repository via agent mode, automated by default with optional strict user review. The entire flow — scope review, validation items, security questions, scan, findings retrieval, and verdicts — is driven programmatically through JSONL.
 
-**What this tool does:** deep security analysis that attempts to **confirm** exploitability and produce proof-of-concept exploit code (PoCs) for real vulnerabilities — going beyond static analysis's *suspected* findings. Each finding carries a verdict (true/false positive) and, where confirmed, a runnable PoC. Heaviest and slowest tool; each new session incurs backend scan cost.
+**What this tool does:** deep security analysis that attempts to **confirm** exploitability and produce proof-of-concept exploit code (PoCs) for real vulnerabilities — going beyond static analysis's *suspected* findings. Each finding carries an assessment (Verified / Needs Further Review / Not Exploitable) and, where confirmed, a runnable PoC. Heaviest and slowest tool; each new session incurs backend scan cost.
 
 **Where it fits in the flow:** `Static Analysis → Unit Tests → Mutation Tests → BugPocer (you are here) → Report`. Run last — it is the most expensive and benefits from the context the earlier steps surface.
 
@@ -440,7 +440,7 @@ If you intend to continue with verdicts, PDF export, or PoC export (Steps 6-8), 
 **Expected output:**
 ```
 {"event":"progress","data":{"message":"Connected to session <id>. Fetching findings..."}}
-{"event":"findings_ready","data":{"session_id":"<id>","findings":[...]},"actions":["set_verdict","generate_pdf","save_pocs","save_findings_md","disconnect"]}
+{"event":"findings_ready","data":{"session_id":"<id>","findings":[...],"hidden_not_exploitable":N},"actions":["set_verdict","fetch_findings","generate_pdf","save_pocs","save_findings_md","disconnect"]}
 ```
 
 Each finding carries:
@@ -448,22 +448,33 @@ Each finding carries:
 | Field | Meaning |
 |-------|---------|
 | `id`, `title`, `severity`, `description`, `file_path`, `line_number` | finding basics |
-| `affected_code` | the PoC/exploit code excerpt |
-| `bugpocer_verdict` | BugPocer's automated call: `true_positive` / `false_positive` |
+| `affected_code` | the affected source snippet (evidence) — not the PoC; that is `poc_content` |
+| `category` | BugPocer's assessment with the reviewer's verdict applied: `tp` (Verified) / `unverified` (Needs Further Review) / `fp` (Not Exploitable) — **use this as the final call** |
+| `bugpocer_verdict` | BugPocer's raw automated call: `true_positive` / `false_positive` (cannot express Needs Further Review) |
 | `user_verdict` | the human reviewer's override: `true_positive` / `false_positive` / `unreviewed` |
-| `user_verdict_reason` | text reason if a human set a verdict (else null) |
-| `effective_verdict` | `user_verdict` if set, else `bugpocer_verdict` — use this as the final call |
+| `user_verdict_reason` | text reason if a human set a verdict (omitted otherwise — agent JSON drops null fields) |
+| `effective_verdict` | `user_verdict` if set, else `bugpocer_verdict` — boolean-derived like `bugpocer_verdict`; prefer `category` |
 | `confidence_score` | BugPocer confidence (int) |
 | `poc_summary`, `poc_content` | PoC summary + full exploit source |
 | `directed_target_ids`, `directed_scope_reason` | Directed scans only: the domains/directions the finding was attributed to, and why it is in scope |
+| `group_id`, `group_role` | set when the finding belongs to a finding group (one root cause, one fix): members share `group_id`; the lead is `Primary`, the rest `Member`. Omitted when ungrouped |
+| `group_title`, `group_root_cause`, `group_fix` | the group's title, shared root cause and shared fix (same on every member) |
+
+Grouped findings are still separate findings — count each one, but present a group together (one heading,
+the shared root cause and fix, then its members, lead first).
+
+`hidden_not_exploitable` counts unreviewed Not Exploitable findings the CLI left out of `findings` (0 when
+the user's `showNotExploitableFindings` setting is on). Send `{"action":"fetch_findings","data":{"include_false_positives":true}}`
+to get a `findings_ready` that includes them.
 
 Findings auto-persist to `.opix/agent/<session-id>/findings.json`.
 
 **Artifact files download automatically on retrieval (default behavior).** As soon as `findings_ready`
-arrives, the CLI writes — using the CLI default filter (true positives + unverified; false positives
-excluded) — the local artifact files to disk and emits `pocs_saved` + `findings_saved` events:
-- **PoC exploit code**, one file per finding, under `pocs_<session-id>/` (real PoC code, not the summary).
-- **Split markdown reports**: `true_positives_<id>_<ts>.md` and `unverified_<id>_<ts>.md` in the working directory.
+arrives, the CLI writes — using the CLI default filter (Verified + Needs Further Review, all severities;
+Not Exploitable and reviewer-rejected findings excluded) — the local artifact files to the working
+directory and emits `pocs_saved` + `findings_saved` events:
+- **PoC exploit code**, one file per finding with a PoC, under `pocs_<session-id>/` (real PoC code, not the summary), mirroring the path the scanner built it at.
+- **Findings markdown**: `findings_<id>_<ts>.md` (Verified + Needs Further Review, grouped and banded by severity). A `ruled_out_<id>_<ts>.md` is written only when an export includes Not Exploitable findings.
 
 No action is needed to get these — they are on disk after `findings_ready`. The `save_pocs` and
 `save_findings_md` actions (Steps 8 / 8.5) remain available only to **re-export** them. The PDF
@@ -479,7 +490,8 @@ calls in bulk instead:
 {"action":"set_verdict","data":{"verdicts":[{"finding_id":"<id>","verdict":true,"reason":"reachable from deposit()"},{"finding_id":"<id2>","verdict":false,"reason":"guarded by onlyOwner"}]}}
 ```
 
-`verdict` is `true` (true positive), `false` (false positive) or `null` (clear back to unreviewed).
+`verdict` is `true` (accept — the finding then counts as Verified), `false` (reject — it counts as Not
+Exploitable and drops out of default exports) or `null` (clear back to unreviewed).
 The CLI replies with `verdict_set` carrying one `results` entry per requested finding. `status` is
 `set` or `error` (unknown/ambiguous id, no connection, send failure — read `message`). **`set` means
 dispatched, not server-confirmed** — the local cache is updated and the command sent, but the server
@@ -494,12 +506,15 @@ above (Step 5 auto-fetches findings), but both are live in the protocol:
 - `qa_waiting` means the CLI is blocked on a server push; only `disconnect` is accepted until it
   resolves. Do not send anything else and do not treat it as a prompt.
 
-**Reporting verdicts (TP/FP):** answer from the verdict fields, and ALWAYS distinguish the two sources:
-- "BugPocer verdict" = `bugpocer_verdict`.
-- "User verdict" = `user_verdict` (`unreviewed` means no human has reviewed it yet).
-- **Never answer "none" just because `user_verdict` is `unreviewed`.** If asked "what were the TP/FPs",
-  report by `effective_verdict`, and state explicitly whether each is a human verdict or BugPocer's
-  unreviewed call. Example: "3 TP / 2 FP per BugPocer (unreviewed); 0 reviewed by a user."
+**Reporting verdicts:** report by `category` — **Verified** (`tp`), **Needs Further Review**
+(`unverified`), **Not Exploitable** (`fp`) — and ALWAYS say whether a human made the call:
+- "User verdict" = `user_verdict` (`unreviewed` means no human has reviewed it yet). When set, it has
+  already been applied to `category`.
+- Never fold Needs Further Review into TP or FP. `bugpocer_verdict` / `effective_verdict` are
+  boolean-derived and misreport it (an unproven finding can read `true_positive` or `false_positive`);
+  use them only as provenance, or as the fallback on an older CLI whose findings lack `category`.
+- **Never answer "none" just because `user_verdict` is `unreviewed`.** Example: "2 Verified / 3 Needs
+  Further Review per BugPocer (unreviewed); 0 reviewed by a user; 4 Not Exploitable hidden."
 
 ### Step 7: Export PDF report (built-in)
 
@@ -510,15 +525,17 @@ Use BugPocer's own PDF generator instead of hand-rolling one. After `findings_re
 ```
 
 All three export actions (`generate_pdf`, `save_pocs`, `save_findings_md`) accept an **optional
-`filter`** mirroring the interactive TUI's category x severity checkboxes. Omit it and you get the CLI
-default (true positives + unverified, all severities, false positives excluded). Any key you omit keeps
-its default, so a partial filter is meaningful:
+`filter`** mirroring the interactive TUI's export checkboxes. Omit it and you get the CLI default
+(Verified + Needs Further Review, all severities; Not Exploitable and reviewer-rejected findings
+excluded). Any key you omit keeps its default, so a partial filter is meaningful:
 ```json
 {"action":"generate_pdf","data":{"filter":{"include_false_positives":true,"include_low":false}}}
 ```
-Keys: `include_true_positives`, `include_unverified`, `include_false_positives`, `include_high`,
-`include_medium`, `include_low`. Excluding *all* categories or *all* severities is rejected with an
-`error`. The resulting event echoes the effective filter back in a `filter` field.
+Keys: `include_true_positives` (Verified), `include_unverified` (Needs Further Review),
+`include_false_positives` (Not Exploitable), `include_high`, `include_medium`, `include_low` (Low also
+covers Informational), `include_reviewer_accepted` (accepted or not yet reviewed; default on),
+`include_reviewer_rejected` (default off). Excluding *all* categories, *all* severities or both reviewer
+keys is rejected with an `error`. The resulting event echoes the effective filter back in a `filter` field.
 
 Then wait for the result with the exact recipe in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md`,
 setting `WANT='"event":"pdf_generated"'` — a bounded FOREGROUND wait, re-run on `WAIT_TIMEOUT`; do NOT
@@ -538,17 +555,18 @@ them. Export every finding's proof-of-concept to disk via the built-in exporter.
 Then wait with the `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md` recipe, `WANT='"event":"pocs_saved"'`
 (foreground, re-run on `WAIT_TIMEOUT`; never background). Success event:
 `{"event":"pocs_saved","data":{"session_id":"<id>","saved_count":N,"output_path":"<dir>"}}`.
-This writes one PoC file per finding (named by unit + vulnerability). Report the count and path.
+This writes one PoC file per finding with a PoC, under `pocs_<id>/`, mirroring the path the scanner built
+it at (older scans fall back to a flat `<unit>_<vulnerability>` name). Report the count and path.
 
-PoC export applies the **CLI default filter** (true positives + unverified, all severities; false
-positives excluded) — same selection as the TUI's "Save PoCs" default.
+PoC export applies the **CLI default filter** (Verified + Needs Further Review, all severities; Not
+Exploitable and reviewer-rejected findings excluded) — same selection as the TUI's "Save PoCs" default.
 
-### Step 8.5: Re-export split findings markdown (built-in, optional)
+### Step 8.5: Re-export findings markdown (built-in, optional)
 
-The split markdown reports (`true_positives_<id>_<ts>.md`, `unverified_<id>_<ts>.md`) are already
-written automatically on retrieval (see Step 5). Use this action only to **re-export** them — the
-same files the TUI's "Save Findings md" produces, using the same CLI default filter (true positives +
-unverified; false positives excluded). Send:
+The findings markdown (`findings_<id>_<ts>.md`) is already written automatically on retrieval (see
+Step 5). Use this action only to **re-export** it — the same files the TUI's "Save Findings md"
+produces, using the same CLI default filter. With a filter that includes Not Exploitable findings, a
+second file, `ruled_out_<id>_<ts>.md`, holds the groups where every member is Not Exploitable. Send:
 
 ```json
 {"action":"save_findings_md"}
@@ -556,7 +574,8 @@ unverified; false positives excluded). Send:
 
 Then wait with the `${CLAUDE_PLUGIN_ROOT}/skills/_shared/wait-for-event.md` recipe, `WANT='"event":"findings_saved"'`
 (foreground, re-run on `WAIT_TIMEOUT`; never background). Success event:
-`{"event":"findings_saved","data":{"session_id":"<id>","files":[{"category":"True Positives","count":N,"path":"<abs-path>"},...]}}`.
+`{"event":"findings_saved","data":{"session_id":"<id>","files":[{"category":"Findings","count":N,"path":"<abs-path>"},...]}}`
+(`category` is `Findings` or `Ruled Out`).
 On `WAIT_ERROR` (e.g. no findings match the default filter) report it and continue.
 Move/copy the files into `olympix-results/` if desired.
 
@@ -573,25 +592,34 @@ Also persist a human-readable summary to `olympix-results/bugpocer_pocs/findings
 ## [Severity] Finding Title
 
 - **File:** {file_path}:{line_number}
-- **Verdict:** {effective_verdict}  (BugPocer: {bugpocer_verdict} · User: {user_verdict})
+- **Assessment:** {category label: Verified / Needs Further Review / Not Exploitable}  (User: {user_verdict})
 - **Confidence:** {confidence_score}
 - **Description:** {description}
 - **PoC:** {poc_summary}
 
 ---
 (repeat for each finding, ordered by severity)
+
+## [Severity] Group: {group_title}
+
+- **Root cause:** {group_root_cause}
+- **Fix:** {group_fix}
+
+### a) Finding Title (lead)
+(same fields as above, one block per member, lead first; file the group under its most severe member)
 ```
 
 ### Step 10: Report to User
 
 Tell the user:
-- How many findings by severity AND by verdict (BugPocer vs user-reviewed)
-- Highlight Critical and High findings with brief descriptions
+- How many findings by severity AND by assessment (`category`), saying which were user-reviewed, plus any `hidden_not_exploitable`
+- How many finding groups there are, if any (each group is one root cause with one fix)
+- Highlight High findings with brief descriptions
 - PDF saved at `pdf_path`; PoCs saved at `output_path`; summary in `olympix-results/bugpocer_pocs/`
 
 Then **proactively offer to triage the findings** (use `AskUserQuestion`) — this is the standard closing step after every tool run:
 
-- **"Yes, triage them"** — for each finding (start with Critical/High), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `effective_verdict` (true vs false positive) with a one-line reason. Prioritize what to fix first. Record your calls with `set_verdict` (Step 6) so the exports reflect them.
+- **"Yes, triage them"** — for each finding (start with High, and Needs Further Review ones), open `file_path:line_number`, read the source against the PoC, and confirm or challenge the `category` with a one-line reason. Prioritize what to fix first. Record your calls with `set_verdict` (Step 6) so the exports reflect them.
 - **"No, just the findings"** — stop; the saved report + PoCs are the deliverable.
 
 Make this offer every run.
@@ -611,8 +639,9 @@ Make this offer every run.
 - **Killed sessions:** Reconnecting to a Killed session does NOT return findings. The CLI emits an `error` event — `"Failed to retrieve session data. Session may be Killed or inaccessible."` — and exits, or times out with `"Timed out connecting to session '<id>'. Session may be Killed, expired, or unreachable."`. Report this to the user instead of retrying.
 - **PDF/PoC export are post-findings actions:** `generate_pdf` and `save_pocs` are only valid after a
   `findings_ready` event (i.e. on a completed session). They re-emit the same action set so you can chain them.
-- **Verdicts are two independent fields:** `bugpocer_verdict` (automated) and `user_verdict` (human override,
-  `unreviewed` until set). Always report both; collapse to `effective_verdict` only for a single final call.
+- **Assessment vs verdict:** `category` is the final call (BugPocer's three-way assessment with any human
+  verdict applied); `user_verdict` says whether a human made it (`unreviewed` until set). Report both.
+  `bugpocer_verdict` / `effective_verdict` are boolean-derived and cannot express Needs Further Review.
 - **Security questions are not optional noise:** answer them from the repo. When the repo is silent, ask the user (interactive runs) rather than skipping — skipping degrades scan quality. Background/dispatched agents have no user, so they skip non-required unknowns instead.
 
 ## Common Issues

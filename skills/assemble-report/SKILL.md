@@ -119,9 +119,9 @@ printf '{"action":"disconnect"}\n' \
   | olympix connect-bp-session -s <session-id> -w . --agent
 ```
 
-Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code`, `file_path`, `line_number`, plus the verdict/PoC fields: `bugpocer_verdict`, `user_verdict`, `user_verdict_reason`, `effective_verdict`, `confidence_score`, `poc_summary`, `poc_content`. Report verdicts by `effective_verdict`, distinguishing BugPocer's automated call from human review (`user_verdict` = `unreviewed` until a human sets it).
+Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code` (the affected source snippet, not the PoC), `file_path`, `line_number`, `category`, plus the verdict/PoC fields: `bugpocer_verdict`, `user_verdict`, `user_verdict_reason`, `effective_verdict`, `confidence_score`, `poc_summary`, `poc_content`, and the finding-group fields `group_id`, `group_role`, `group_title`, `group_root_cause`, `group_fix`. Report by `category` — `tp` Verified, `unverified` Needs Further Review, `fp` Not Exploitable (a human verdict is already applied) — and say whether a human reviewed it (`user_verdict` = `unreviewed` until a human sets it). See the `bug-pocer` skill, Step 5, for the field details.
 
-Also available at `.opix/agent/<session-id>/findings.json`. Connecting also auto-writes the artifact files (PoC exploit code under `pocs_<session-id>/` and the split `true_positives_*.md` / `unverified_*.md` reports, CLI default filter) — copy them into `olympix-results/bugpocer_pocs/`.
+Also available at `.opix/agent/<session-id>/findings.json`. Connecting also auto-writes the artifact files to the working directory (PoC exploit code under `pocs_<session-id>/` and the `findings_*.md` report, CLI default filter) — copy them into `olympix-results/bugpocer_pocs/`.
 
 Parse and save to `olympix-results/bugpocer_pocs/findings.md` — the same path the `bug-pocer` skill writes, so re-assembly overwrites rather than duplicates.
 
@@ -189,12 +189,12 @@ Create `olympix-results/report.md`:
 
 ## BugPocer Scan Report
 
-### [Severity] finding_name
+### [Severity] [Assessment] finding_name
 
 **File:** file_path:line_number
 **Description:** Full description.
 
-(Repeat for each finding, ordered by severity: Critical > High > Medium > Low)
+(Repeat for each finding, ordered by severity: High > Medium > Low. Assessment is the `category` label: Verified / Needs Further Review / Not Exploitable. List a finding group once — its title, root cause and fix — with its members under it, lead first, filed under its most severe member.)
 
 ---
 
