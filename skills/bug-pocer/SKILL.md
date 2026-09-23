@@ -7,7 +7,8 @@ description: >
   (incl. follow-ups), scan, findings retrieval with verdicts, and built-in
   PDF + PoC export, all driven programmatically. Always asks the user up front
   whether to scan the full repo or only the diff vs a git ref (diff mode).
-  TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer", "diff mode", "diff scan", "scan the diff"
+  Supports directed scans that focus on chosen risk domains and custom questions.
+  TRIGGER: "bug pocer", "bugpocer", "security analysis", "run bug-pocer", "exploit generation", "bug-pocer", "diff mode", "diff scan", "scan the diff", "directed scan", "directed mode", "focus the scan on"
 allowed-tools: Read, Glob, Grep, Bash, Write, Skill, AskUserQuestion
 ---
 
@@ -85,6 +86,33 @@ In strict mode, always add `--rebuild-context` (`-rc`) to either command. In aut
 - **Without `--diff-target` the diff always runs against the working tree**, so `compared_against` reports `working_tree` and finding line numbers refer to on-disk files, not to a commit.
 - `--diff-target` without `--diff-base` is an error.
 
+### Step 1.6: Directed Scan (optional — only when the user asks)
+
+A **directed scan** investigates only the risk **domains** and/or **custom directions** (specific questions about the code) the user picks; an independent scope review drops findings that don't connect to a selected target. Use it when the user asks to focus the scan ("only look at the oracle logic", "check whether X can happen", "directed scan"). Do **not** add it as a new mandatory question — without such a request, run a standard scan. Directed mode combines with diff mode and with strict review.
+
+First check the CLI supports directed mode (older CLIs reject the flag as plain text, even with `--agent`):
+
+```bash
+olympix bug-pocer --help 2>&1 | grep -q -- --directed && echo DIRECTED_OK || echo DIRECTED_UNSUPPORTED
+```
+
+If `DIRECTED_UNSUPPORTED`, tell the user to run `olympix update` and re-probe; if it is still unsupported, offer a standard scan instead.
+
+Append to the Step 2 launch command (use an absolute path for the directions file — a relative one resolves from the directory the CLI is launched in, not from `-w`):
+
+```bash
+--directed --domains vaults,oracles --directions-file "$PWD/.opix-bp-directions.md"
+```
+
+- `--directed` is required. `--domains` / `--directions-file` **without `--directed` fail at startup**.
+- Pass at least one domain or a directions file — in agent mode an empty directed scope is rejected.
+- **Domains (Solidity only):** `tokens`, `vaults`, `lending`, `trading`, `staking`, `oracles`, `bridges`, `governance`, `signatures`, `upgrades`, `access-control`, `external-calls`. Map the user's wording to these IDs; if unsure which apply, ask (interactive runs only).
+- **Custom directions (every language):** write the user's questions to a file — Markdown/text with one bullet per direction (indented lines continue a bullet, headings are ignored), or JSON `{"targets":["..."]}`. Limits: 32 directions, 8,000 characters each, 32,000 total. Phrase each as a concrete question about this codebase (name the contract/function), not a generic category.
+- Instead of flags, the same scope can go on the `new_session` action (Step 3a): `{"action":"new_session","data":{"title":"{SESSION_TITLE}","directed":true,"domains":["vaults"],"directions":["Can a stale price enable borrowing?"]}}` (or `"directions_file":"<path>"`).
+- Directed scans use the normal Full/Diff run quota. A directed scan with no findings is not proof the targeted area is safe — say so when reporting.
+
+> **Dispatched/background agent:** use a directed scope only if the caller passed one; never ask.
+
 ### Step 2: Start BugPocer Session
 
 > **Checkpoint before launching (interactive runs only):** have you asked the user full-repo vs diff (Step 1.5)? If not, stop and ask now — the launch command below depends on the answer (diff mode appends `--diff-base`). **Dispatched/background agents skip this** — use the mode the caller passed (default full) and launch.
@@ -143,7 +171,7 @@ Repeat: read new events from the log → decide → write the next action into t
 
 ```bash
 kill "$(cat .opix-bp-holder.pid)" 2>/dev/null
-rm -f .opix-bp-in .opix-bp-holder.pid
+rm -f .opix-bp-in .opix-bp-holder.pid .opix-bp-directions.md
 ```
 
 (Use the PID file — job specs like `%1` don't survive across Bash calls.)
@@ -220,6 +248,13 @@ record the failures and carry on, then include them in your final report.
 
 Pre-flight can be bypassed entirely with `--skip-preflight` (`-sp`) on the launch command; only do
 that if the user asks.
+
+#### 3a″. Directed Scope (directed scans only)
+Emitted after pre-flight and **before** context cache review and scope review when the session is directed. It echoes the resolved scope:
+```json
+{"event":"directed_scope","data":{"domains":["vaults","oracles"],"directions":["Can a stale oracle price let a user borrow more than their collateral allows?"]},"actions":["confirm_directed","disconnect"]}
+```
+Check it matches what the user asked for, then send `{"action":"confirm_directed"}` (in strict mode, after the user approves the scope). Any other action returns an `error` with code `invalid_directed_action`, and the prompt stays open. After a 300s read timeout, current CLIs re-emit `directed_scope`; on earlier directed builds the CLI instead emits `Timeout waiting for input` followed by `invalid_directed_action` without re-emitting — in both cases the prompt is still open, so send `confirm_directed` or `disconnect`, and never treat it as a rejection of an answer. An invalid scope (unknown domain, no targets, a domain on a non-Solidity repo, directions over the limits) fails with `invalid_directed_scope`; a server that doesn't support directed mode fails with `directed_unavailable`.
 
 #### 3b′. Context Cache Review (conditional)
 **Strict mode:** choose `rebuild_context` if this event appears; the reuse/update defaults below apply only to automated mode.
@@ -420,6 +455,7 @@ Each finding carries:
 | `effective_verdict` | `user_verdict` if set, else `bugpocer_verdict` — use this as the final call |
 | `confidence_score` | BugPocer confidence (int) |
 | `poc_summary`, `poc_content` | PoC summary + full exploit source |
+| `directed_target_ids`, `directed_scope_reason` | Directed scans only: the domains/directions the finding was attributed to, and why it is in scope |
 
 Findings auto-persist to `.opix/agent/<session-id>/findings.json`.
 
@@ -592,3 +628,7 @@ Make this offer every run.
 | Server build fails on a Rust/Anchor repo that builds locally | Almost always private `git = "…"` cargo dependencies (they live in `~/.cargo/git`, never in the repo) or uncommitted prebuilt `.so` fixtures. Run `cargo vendor > .cargo/config.toml` and commit `vendor/`, or scan a branch with public deps. `preflight_failed` flags this before the upload |
 | `preflight_failed` arrived and you waited for a response | It has no `actions` — it is informational and the CLI has already continued. Report it and move on; never block on it |
 | `--diff-target requires --diff-base` | You passed `--diff-target` alone — supply `--diff-base <ref>` too, or drop `--diff-target` to diff against the working tree |
+| `--domains and --directions-file require --directed` | Add `--directed` to the launch command |
+| `Invalid argument '--directed'! Try running 'help' to check valid arguments` (plain text, even with `--agent`) | The CLI predates directed mode — tell the user to run `olympix update`, then re-probe (Step 1.6) |
+| `invalid_directed_scope` error | Fix the scope: known domain IDs, at least one target, domains only on Solidity repos, directions within the limits |
+| `directed_unavailable` error | The CLI supports directed mode but the Olympix server doesn't advertise it yet — `olympix update` won't help. Tell the user, and offer a standard scan instead |
