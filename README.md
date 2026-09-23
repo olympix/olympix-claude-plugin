@@ -148,7 +148,7 @@ The agent runs `olympix bug-pocer --directed` with the matching domains (`--doma
 | `olympix:full-run` | Run all Olympix tools on a Foundry or Hardhat repo |
 | `olympix:static-analysis` | Run vulnerability scanner |
 | `olympix:mutation-test` | Generate mutation tests for top 10 contracts |
-| `olympix:fuzz-test` | Generate fuzz tests for top 3 contracts (run on demand; not part of `full-run`). Can also stop a running fuzz session |
+| `olympix:fuzz-test` | Bounded Adversarial Verification (BAV) for top 3 contracts (run on demand; not part of `full-run`). Can also stop a running BAV session |
 | `olympix:unit-test` | Generate unit tests with coverage scaffolding |
 | `olympix:bug-pocer` | Run BugPocer security analysis (automated by default; optional strict review) |
 | `olympix:assemble-report` | Collect results into `olympix-results/report.md` |
