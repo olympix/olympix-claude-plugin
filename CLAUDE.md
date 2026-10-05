@@ -57,7 +57,7 @@ All supported commands use `--agent` for JSONL communication:
   unit-tests/results.json      — dispatch receipt at dispatch; full UT results (coverage) written at retrieval
   mutation-tests/sessions.json — MT session list
   mutation-tests/results.json  — dispatch receipt at dispatch; full MT results (kill scores) written at retrieval
-  fuzz-tests/results.json      — full BugScout results summary, written at retrieval (connect-bugscout-session);
+  bugscout/results.json        — full BugScout results summary, written at retrieval (connect-bugscout-session);
                                  tests_path points at the downloaded generated test files
 
 olympix-results/               — formatted reports (created by skills)

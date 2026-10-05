@@ -75,7 +75,7 @@ printf '{"action":"disconnect"}\n' \
 **Expected JSONL output:**
 ```
 {"event":"progress","data":{"message":"BugScout started. Session <uuid>. ..."}}
-{"event":"completed","data":{"type":"fuzz_test","session_id":"<uuid>","message":"BugScout run started; results pending."}}
+{"event":"completed","data":{"type":"bugscout","session_id":"<uuid>","message":"BugScout run started; results pending."}}
 ```
 
 Record the **session_id** from the `completed` event (`data.session_id`). The exact `message` wording varies by CLI version — match on `event` and `data.session_id`, never on the message text.
@@ -94,7 +94,7 @@ Record the **session_id** from the `completed` event (`data.session_id`). The ex
 
 ### Step 4: Wait for Completion
 
-**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="fuzz_tests"`. The loop matches on `id`, reads `status`, and breaks on `Completed`/`Failed`/`Killed` using plain string equality.
+**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="bugscout"`. The loop matches on `id`, reads `status`, and breaks on `Completed`/`Failed`/`Killed` using plain string equality.
 
 **If status is `Failed`:** stop polling and go to Step 5 to read the failure.
 
@@ -113,26 +113,26 @@ printf '{"action":"generate_report"}\n{"action":"disconnect"}\n' \
 
 **Expected output:**
 ```
-{"event":"fuzz_tests_downloaded","data":{"session_id":"<id>","saved_count":7,"output_path":"<dir>","files":["...t.sol"]},"actions":["download_tests","generate_report","disconnect"]}
-{"event":"fuzz_test_results","data":{"session_id":"<id>","contracts":3,"strategies":5,"test_cases":42,"exploit_test_cases":2,"tests_path":"<dir>","tests_file_count":7},"actions":["download_tests","generate_report","disconnect"]}
+{"event":"bugscout_tests_downloaded","data":{"session_id":"<id>","saved_count":7,"output_path":"<dir>","files":["...t.sol"]},"actions":["download_tests","generate_report","disconnect"]}
+{"event":"bugscout_results","data":{"session_id":"<id>","contracts":3,"strategies":5,"test_cases":42,"exploit_test_cases":2,"tests_path":"<dir>","tests_file_count":7},"actions":["download_tests","generate_report","disconnect"]}
 {"event":"pdf_generated","data":{"session_id":"<id>","pdf_path":"<path>"}}
 ```
 
-The `fuzz_test_results` payload is a **summary** (counts of contracts, strategies, test cases, and exploit test cases) — the full per-test detail lives in the generated test files, the emailed report and the PDF.
+The `bugscout_results` payload is a **summary** (counts of contracts, strategies, test cases, and exploit test cases) — the full per-test detail lives in the generated test files, the emailed report and the PDF.
 
 **The generated test files download automatically on reconnect (default behavior).** Before
-`fuzz_test_results` is emitted, the CLI pulls the generated `.t.sol` sources — the same files the
-completion email attaches as a zip — into `fuzz_tests_<session-id>/` in the working directory and
-emits `fuzz_tests_downloaded` (`saved_count`, `output_path`, `files`). The same path/count is echoed
-on `fuzz_test_results` as `tests_path` / `tests_file_count`. No action is needed to get them; the
+`bugscout_results` is emitted, the CLI pulls the generated `.t.sol` sources — the same files the
+completion email attaches as a zip — into `bugscout_tests_<session-id>/` in the working directory and
+emits `bugscout_tests_downloaded` (`saved_count`, `output_path`, `files`). The same path/count is echoed
+on `bugscout_results` as `tests_path` / `tests_file_count`. No action is needed to get them; the
 `download_tests` action only **re-downloads** them.
 
-- Results auto-persist to `.opix/agent/fuzz-tests/results.json` in the workspace.
+- Results auto-persist to `.opix/agent/bugscout/results.json` in the workspace.
 - If `generate_report` was sent, the PDF is written to disk and its path reported in `pdf_generated`.
-- **No `fuzz_tests_downloaded` and no `tests_path`:** either the CLI predates the feature (tell the
+- **No `bugscout_tests_downloaded` and no `tests_path`:** either the CLI predates the feature (tell the
   user to run `olympix update`) or the session has no stored test files — the CLI says which in a
   `progress` event. Continue either way; the results summary and PDF are unaffected.
-- **No results yet** (`results_ready` instead of `fuzz_test_results`): the run is still finishing — wait and re-poll Step 4.
+- **No results yet** (`results_ready` instead of `bugscout_results`): the run is still finishing — wait and re-poll Step 4.
 
 To re-download the test files later without re-reading results, send `download_tests` on a reconnect:
 
@@ -198,7 +198,7 @@ olympix kill-bugscout-session -s <session-id> --agent
   error, and killing again is safe.
 
 After a kill the session is terminal and reports `Killed` in `olympix sessions --agent`. There are **no
-results** — reconnecting returns an `error` event, not `fuzz_test_results`:
+results** — reconnecting returns an `error` event, not `bugscout_results`:
 
 ```
 {"event":"error","data":{"message":"Server error: This run was killed — no results are available."}}
@@ -208,7 +208,7 @@ Report that to the user rather than retrying. To try again, dispatch a fresh run
 no resume, and no test files are downloaded for a killed session.
 
 Killing needs the session id, so if it was never recorded, find it with `olympix sessions --agent` (under
-`fuzz_tests`) before killing.
+`bugscout`) before killing.
 
 ## Quick Reference
 
@@ -218,7 +218,7 @@ Killing needs the session id, so if it was never recorded, find it with `olympix
 | 1 | Follow `${CLAUDE_PLUGIN_ROOT}/skills/_shared/forge-setup.md` | `forge build` must pass |
 | 2 | Identify top 3 contracts (plugin convention — BugScout is heavy) | Concrete contracts only |
 | 3 | `printf '{"action":"disconnect"}\n' \| olympix generate-bugscout-tests -w . -p ... --agent` | Record session_id from `completed` |
-| 4 | Poll `olympix sessions --agent` (`ARRAY_KEY="fuzz_tests"`) | Until `Completed`/`Failed`/`Killed` |
+| 4 | Poll `olympix sessions --agent` (`ARRAY_KEY="bugscout"`) | Until `Completed`/`Failed`/`Killed` |
 | — | `olympix kill-bugscout-session -s <id> --agent` (only if the user asks to stop) | Confirm first — permanent, results lost |
 | 5 | `olympix connect-bugscout-session -s <id> --agent` (`generate_report` + `disconnect`) | Retrieve results + auto-downloaded test files + PDF |
 | 6 | Save `olympix-results/bugscout/bugscout_results.md` + copy test files to `tests/` | — |
@@ -230,7 +230,7 @@ Killing needs the session id, so if it was never recorded, find it with `olympix
 - **A run can be stopped** — see "Stopping a Run". Killing is permanent and results are lost, so only do it when the user asks.
 - **Never state or imply an expected scan duration**, and never call a long run abnormal. Report phase/state only — "still running", "scanning", "done", "failed". The poll cadence is an internal mechanic; do not present it as an ETA. BugScout is heavier than mutation/unit tests, so it can legitimately run a while.
 - **Results also arrive by email.** The agent-mode summary is the counts; the generated test files, the emailed report and the PDF hold the full detail.
-- **The generated test sources are no longer email-only** — they download automatically on reconnect into `fuzz_tests_<session-id>/`, and `download_tests` re-downloads them on demand. This needs a CLI with the `download_tests` action; older builds simply emit no `fuzz_tests_downloaded` event.
+- **The generated test sources are no longer email-only** — they download automatically on reconnect into `bugscout_tests_<session-id>/`, and `download_tests` re-downloads them on demand. This needs a CLI with the `download_tests` action; older builds simply emit no `bugscout_tests_downloaded` event.
 
 ## Common Issues
 
@@ -241,8 +241,8 @@ Killing needs the session id, so if it was never recorded, find it with `olympix
 | `connect-bugscout-session` command missing | CLI predates BugScout agent mode — tell the user to run `olympix update`, then re-probe |
 | Contract path wrong | Verify the path exists with `ls`; use relative path from repo root |
 | Session status `Failed` | Reconnect and read the failure message (often a `forge` compilation error) |
-| `results_ready` instead of `fuzz_test_results` | Run not finished — wait and re-poll |
-| No `fuzz_tests_downloaded` event / no `tests_path` | CLI predates the test-file download (run `olympix update`) or the session has no stored files — the `progress` event says which. Not fatal; continue with the summary/PDF |
+| `results_ready` instead of `bugscout_results` | Run not finished — wait and re-poll |
+| No `bugscout_tests_downloaded` event / no `tests_path` | CLI predates the test-file download (run `olympix update`) or the session has no stored files — the `progress` event says which. Not fatal; continue with the summary/PDF |
 | `download_tests` returns an `error` event | Session has no stored test files, or the download timed out — retry once; the emailed zip remains the fallback |
 | Session status `Killed` | The run was stopped — terminal, no results. Dispatch a fresh run; there is no resume |
 | `kill-bugscout-session` command missing | CLI predates the BugScout kill command — tell the user to run `olympix update` |

@@ -15,7 +15,7 @@ Each session object is `{"id":"<uuid>","title":...,"status":"<Status>","created_
 |-----------|------|--------|
 | `mutation_tests` | `Completed` | `Failed` |
 | `unit_tests` | `Completed` | `Failed` |
-| `fuzz_tests` | `Completed` | `Failed`, `Killed` (not retrievable) |
+| `bugscout` | `Completed` | `Failed`, `Killed` (not retrievable) |
 | `bug_pocer` | `InitialScanCompleted` | `Killed` (not retrievable) |
 
 ## The loop — copy verbatim, set the two variables
@@ -30,7 +30,7 @@ re-reading the log every few seconds is the #1 cause of a subagent spinning and 
 
 ```bash
 SESSION_ID="<the session id you recorded>"
-ARRAY_KEY="mutation_tests"   # one of: mutation_tests | unit_tests | fuzz_tests | bug_pocer
+ARRAY_KEY="mutation_tests"   # one of: mutation_tests | unit_tests | bugscout | bug_pocer
 
 ST=Unknown
 for i in $(seq 1 6); do
