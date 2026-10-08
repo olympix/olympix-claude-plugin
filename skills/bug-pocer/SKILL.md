@@ -217,8 +217,8 @@ Send `new_session` (carrying the confirmed title) to start a new session, or `co
 {"action":"new_session","data":{"title":"{SESSION_TITLE}"}}
 ```
 
-`clone_session` copies a **finished** session (`phase` `completed` or `terminal`: status `ContextExpired`,
-`InitialScanCompleted`, `SessionKilled`, or any error) into a fresh one with the same settings — this is the recovery path when
+`clone_session` copies a **finished** session (`phase` `completed` or `terminal` in the table above) into a
+fresh one with the same settings — this is the recovery path when
 a session's context has expired, and it saves re-answering the whole validation phase:
 ```json
 {"action":"clone_session","data":{"session_id":"<id>"}}
@@ -485,11 +485,11 @@ action. Send `{"action":"fetch_findings","data":{"include_false_positives":true}
 **Connected before the scan finished?** `findings_ready` then carries `"scan_complete":false` with the
 session's `session_status` and `phase`, an empty `findings` list that is **not** a result, and a
 `progress` line saying the scan is still running (or that the session ended without findings). Nothing
-is written to disk and the export actions return an `error`. Disconnect and poll again, or send
+is written to disk, not even `findings.json`, and the export actions return an `error`. Disconnect and poll again, or send
 `fetch_findings` to ask the server once more. A completed scan carries `"scan_complete":true`; older
 CLIs send none of these fields.
 
-Findings auto-persist to `.opix/agent/<session-id>/findings.json`.
+Once the scan has finished, findings auto-persist to `.opix/agent/<session-id>/findings.json`.
 
 **Artifact files download automatically on retrieval (default behavior).** As soon as `findings_ready`
 arrives, the CLI writes — using the CLI default filter (Verified + Needs Further Review, all severities;

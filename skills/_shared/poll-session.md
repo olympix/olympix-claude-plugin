@@ -16,7 +16,7 @@ Each session object is `{"id":"<uuid>","title":...,"status":"<Status>","created_
 | `mutation_tests` | `Completed` | `Failed` |
 | `unit_tests` | `Completed` | `Failed` |
 | `fuzz_tests` | `Completed` | `Failed`, `Killed` (not retrievable) |
-| `bug_pocer` | `InitialScanCompleted` | `Killed`, `ContextExpired` (not retrievable; `clone_session` recovers a `ContextExpired` one) |
+| `bug_pocer` | `InitialScanCompleted` | `Killed`, `ContextExpired` (not retrievable; `clone_session` recovers either) |
 
 ## The loop — copy verbatim, set the two variables
 
