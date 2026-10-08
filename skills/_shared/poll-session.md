@@ -16,12 +16,12 @@ Each session object is `{"id":"<uuid>","title":...,"status":"<Status>","created_
 | `mutation_tests` | `Completed` | `Failed` |
 | `unit_tests` | `Completed` | `Failed` |
 | `fuzz_tests` | `Completed` | `Failed`, `Killed` (not retrievable) |
-| `bug_pocer` | `InitialScanCompleted` | `Killed` (not retrievable) |
+| `bug_pocer` | `InitialScanCompleted` | `Killed`, `ContextExpired` (not retrievable; `clone_session` recovers a `ContextExpired` one) |
 
 ## The loop — copy verbatim, set the two variables
 
 **Run this in the FOREGROUND with Bash `timeout: 600000`. It blocks ~7 min (gentle 90s
-polls) and then prints `status: <X>`. If `<X>` is NOT one of the four terminal statuses
+polls) and then prints `status: <X>`. If `<X>` is NOT one of the terminal statuses
 below, run this EXACT same call again.** Do NOT launch it with `run_in_background`, do NOT
 add your own `sleep`s or log/liveness checks between calls, and do NOT narrate each poll —
 one status line when it finally resolves is enough. Backgrounding the loop and then
@@ -57,14 +57,15 @@ print(status)
 
   # Plain string equality — NO case-globbing, NO escaped quotes.
   if [ "$ST" = "Completed" ] || [ "$ST" = "Failed" ] \
-     || [ "$ST" = "InitialScanCompleted" ] || [ "$ST" = "Killed" ]; then
+     || [ "$ST" = "InitialScanCompleted" ] || [ "$ST" = "Killed" ] \
+     || [ "$ST" = "ContextExpired" ]; then
     break
   fi
 
   [ "$i" -lt 6 ] && sleep 90   # ~7 min window; no trailing sleep after the last poll
 done
 
-echo "status: $ST"   # terminal (Completed/Failed/InitialScanCompleted/Killed) -> proceed; else run this SAME call again
+echo "status: $ST"   # terminal (Completed/Failed/InitialScanCompleted/Killed/ContextExpired) -> proceed; else run this SAME call again
 ```
 
 ## Notes
@@ -81,7 +82,10 @@ echo "status: $ST"   # terminal (Completed/Failed/InitialScanCompleted/Killed) -
   to keep the user's chat free; even then, never re-check it yourself between.
 - If `ST` stays `NotFound` across several windows, the session id is wrong or auth expired — re-run the
   `auth` skill and re-check the id; do not keep polling blindly.
-- `Failed` / `Killed` are terminal — stop and read `error_message` (reconnect to retrieve it); do not
-  treat them as "still running".
+- `Failed` / `Killed` / `ContextExpired` are terminal — stop and read `error_message` (reconnect to
+  retrieve it); do not treat them as "still running".
+- Newer CLIs also give each `bug_pocer` row a `phase`: `in_progress`, `awaiting_validation`, `scanning`
+  (validated, scan running — status `ValidationCompleted`), `completed` or `terminal`. The loop keys on
+  `status` so it works with every CLI; `phase` is what to tell the user.
 - The 90s cadence and ~7-min window are internal mechanics — never present them to the user as an
   ETA, and never call a long scan abnormal.
