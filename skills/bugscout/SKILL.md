@@ -120,6 +120,8 @@ printf '{"action":"generate_report"}\n{"action":"disconnect"}\n' \
 
 The `bugscout_results` payload is a **summary** (counts of contracts, strategies, test cases, and exploit test cases) — the full per-test detail lives in the generated test files, the emailed report and the PDF.
 
+**Pre-rename names:** for one release the CLI also emits `fuzz_test_results` and `fuzz_tests_downloaded` right after their `bugscout_` events (same data), a `fuzz_tests` key in `olympix sessions --agent`, and `.opix/agent/fuzz-tests/results.json`, so plugins from before the rename keep working. Ignore them; act on the `bugscout` names only.
+
 **The generated test files download automatically on reconnect (default behavior).** Before
 `bugscout_results` is emitted, the CLI pulls the generated `.t.sol` sources — the same files the
 completion email attaches as a zip — into `bugscout_tests_<session-id>/` in the working directory and
