@@ -121,7 +121,7 @@ printf '{"action":"disconnect"}\n' \
 
 Returns `findings_ready` event with findings array. Each finding: `id`, `title`, `severity`, `description`, `affected_code` (the affected source snippet, not the PoC), `file_path`, `line_number`, `category`, plus the verdict/PoC fields: `bugpocer_verdict`, `user_verdict`, `user_verdict_reason`, `effective_verdict`, `confidence_score`, `poc_summary`, `poc_content`, and the finding-group fields `group_id`, `group_role`, `group_title`, `group_root_cause`, `group_fix`. Report by `category` — `tp` Verified, `unverified` Needs Further Review, `fp` Not Exploitable (a human verdict is already applied) — and say whether a human reviewed it (`user_verdict` = `unreviewed` until a human sets it). See the `bug-pocer` skill, Step 5, for the field details.
 
-Also available at `.opix/agent/<session-id>/findings.json`. Connecting also auto-writes the artifact files to the working directory (PoC exploit code under `pocs_<session-id>/` and the `findings_*.md` report, CLI default filter) — copy them into `olympix-results/bugpocer_pocs/`.
+Also available at `.opix/agent/<session-id>/findings.json` once the scan has finished (the CLI does not write it while `scan_complete` is `false`). Connecting also auto-writes the artifact files to the working directory (PoC exploit code under `pocs_<session-id>/` and the `findings_*.md` report, CLI default filter) — copy them into `olympix-results/bugpocer_pocs/`.
 
 Parse and save to `olympix-results/bugpocer_pocs/findings.md` — the same path the `bug-pocer` skill writes, so re-assembly overwrites rather than duplicates.
 

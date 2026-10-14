@@ -51,7 +51,6 @@ All supported commands use `--agent` for JSONL communication:
 .opix/agent/                   — auto-persisted by CLI (in workspace dir)
   bug-pocer/sessions.json      — BP session list
   <session-id>/findings.json   — BP findings
-  <session-id>/qa.json         — BP Q&A exchanges
   unit-tests/sessions.json     — UT session list
   unit-tests/contracts.json    — UT available contracts
   unit-tests/results.json      — dispatch receipt at dispatch; full UT results (coverage) written at retrieval

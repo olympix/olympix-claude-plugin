@@ -201,13 +201,24 @@ First event is `sessions_list` showing existing sessions.
 {"event":"sessions_list","data":{"sessions":[...]},"actions":["new_session","connect_session","clone_session","disconnect"]}
 ```
 
+Each session carries `id`, `title`, `status`, `created_at` and, on newer CLIs, `phase` — what the
+status means for the user:
+
+| `status` | `phase` |
+|----------|---------|
+| `Pending`, `ChatStarted` | `in_progress` |
+| `ValidationRequested` | `awaiting_validation` |
+| `ValidationCompleted` | `scanning` (validation submitted, scan running) |
+| `InitialScanCompleted` (and legacy `QuestionReceived`/`QuestionAnswered`) | `completed` |
+| `Killed`, `SessionKilled`, `ContextExpired`, any error | `terminal` |
+
 Send `new_session` (carrying the confirmed title) to start a new session, or `connect_session` with a session ID to reconnect:
 ```json
 {"action":"new_session","data":{"title":"{SESSION_TITLE}"}}
 ```
 
-`clone_session` copies a **terminal** session (status `ContextExpired`, `InitialScanCompleted`,
-`SessionKilled`, or any error) into a fresh one with the same settings — this is the recovery path when
+`clone_session` copies a **finished** session (`phase` `completed` or `terminal` in the table above) into a
+fresh one with the same settings — this is the recovery path when
 a session's context has expired, and it saves re-answering the whole validation phase:
 ```json
 {"action":"clone_session","data":{"session_id":"<id>"}}
@@ -412,7 +423,7 @@ The scan runs **asynchronously** on the backend — once `validation_submitted` 
 CLI has already exited, so do NOT hold that subprocess open waiting for an answer. You poll separately
 with `olympix sessions --agent`.
 
-**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="bug_pocer"`. The loop matches on `id`, reads `status`, and breaks on `InitialScanCompleted` (BugPocer never reports `Completed`) or `Killed`, using plain string equality (a hand-rolled `case "$ST"` with escaped quotes never matches and hangs the run for ~1 hour).
+**Poll using the exact loop in `${CLAUDE_PLUGIN_ROOT}/skills/_shared/poll-session.md` — do NOT write your own.** Set `SESSION_ID` to the recorded id and `ARRAY_KEY="bug_pocer"`. The loop matches on `id`, reads `status`, and breaks on `InitialScanCompleted` (BugPocer never reports `Completed`), `Killed` or `ContextExpired`, using plain string equality (a hand-rolled `case "$ST"` with escaped quotes never matches and hangs the run for ~1 hour).
 
 Each call to that loop blocks ~7 min in the **foreground** and prints the status; if it is not
 terminal, run the same call again (the loop file explains the re-run rule, and the one main-loop-only
@@ -463,11 +474,22 @@ Each finding carries:
 Grouped findings are still separate findings — count each one, but present a group together (one heading,
 the shared root cause and fix, then its members, lead first).
 
-`hidden_not_exploitable` counts unreviewed Not Exploitable findings the CLI left out of `findings` (0 when
-the user's `showNotExploitableFindings` setting is on). Send `{"action":"fetch_findings","data":{"include_false_positives":true}}`
-to get a `findings_ready` that includes them.
+`title` is the display title the PDF prints (`Uncollected Taker Fees`, not `uncollected_taker_fees`), and
+`file_path` is relative to the project root.
 
-Findings auto-persist to `.opix/agent/<session-id>/findings.json`.
+`hidden_not_exploitable` counts unreviewed Not Exploitable findings the CLI left out of `findings` (0 when
+the user's `showNotExploitableFindings` setting is on); when it is above 0 a `progress` line names the
+action. Send `{"action":"fetch_findings","data":{"include_false_positives":true}}` to get a
+`findings_ready` that includes them.
+
+**Connected before the scan finished?** `findings_ready` then carries `"scan_complete":false` with the
+session's `session_status` and `phase`, an empty `findings` list that is **not** a result, and a
+`progress` line saying the scan is still running (or that the session ended without findings). Nothing
+is written to disk, not even `findings.json`, and the export actions return an `error`. Disconnect and poll again, or send
+`fetch_findings` to ask the server once more. A completed scan carries `"scan_complete":true`; older
+CLIs send none of these fields.
+
+Once the scan has finished, findings auto-persist to `.opix/agent/<session-id>/findings.json`.
 
 **Artifact files download automatically on retrieval (default behavior).** As soon as `findings_ready`
 arrives, the CLI writes — using the CLI default filter (Verified + Needs Further Review, all severities;
