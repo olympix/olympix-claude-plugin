@@ -18,4 +18,4 @@ olympix generate-unit-tests -w . -p src/Vault.sol --agent --include-dot-env --en
 olympix bug-pocer -w . --agent --diff-base main --rebuild-context --include-dot-env --env-file .env.testing < .opix-bp-in > .opix-bp-events.log 2>&1
 ```
 
-For `full-run`, preserve whether upload was requested, the chosen file path, and which tools it applies to. Pass those choices to each applicable tool agent, or to the main agent driving strict BugPocer setup. Do not add these flags to static analysis, fuzz testing, polling, or results-retrieval commands. Reconnecting to an existing session does not replace its uploaded environment file.
+For `full-run`, preserve whether upload was requested, the chosen file path, and which tools it applies to. Pass those choices to each applicable tool agent, or to the main agent driving strict BugPocer setup. Do not add these flags to static analysis, BugScout, polling, or results-retrieval commands. Reconnecting to an existing session does not replace its uploaded environment file.
